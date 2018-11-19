@@ -146,6 +146,9 @@ include_directories(
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
+  #DEPENDS system_lib
+
+
 ## e.g. "rosrun someones_pkg node" instead of "rosrun someones_pkg someones_pkg_node"
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
 
@@ -155,7 +158,7 @@ include_directories(
 
 # Specify libraries to link a library or executable target against
  target_link_libraries(detection
-   ${catkin_LIBRARIES} ${opencv2_LIBRARIES}
+   ${catkin_LIBRARIES}
  )
 
 #############

@@ -29,7 +29,12 @@ public:
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
   {
     namespace enc = sensor_msgs::image_encodings;
+
     cv_bridge::CvImagePtr cv_ptr;
+    cv::Mat hsv_img;
+    cv_bridge::CvImage img_bridge;
+    sensor_msgs::Image img_msg; // >> message to be sent
+
     try
     {
       cv_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
@@ -40,13 +45,21 @@ public:
       return;
     }
 
+    // PERFORM DETECTION
+
+    cv::cvtColor(cv_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
+
     // Draw an example circle on the video stream
     if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
       cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
+    std_msgs::Header header; // empty header
+    header = cv_ptr->header; // user defined counter
 
-    // Output modified video stream
-    image_pub_.publish(cv_ptr->toImageMsg());
+    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, hsv_img);
+    img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
+      // Output modified video stream
+    image_pub_.publish(img_msg); //cv_ptr
   }
 };
 
