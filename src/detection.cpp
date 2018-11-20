@@ -69,6 +69,14 @@ public:
 
     cv::inRange(hsv_img, cv::Scalar(low_H, low_S, low_V), cv::Scalar(high_H, high_S, high_V), b_mask);
 
+    // Define Erosion operation
+    int erosion_size = 4;
+    cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                           cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
+                                           cv::Point( erosion_size, erosion_size ) );
+
+    /// Apply the erosion operation
+    cv::erode( b_mask, b_mask, element );
 
     // Draw an example circle on the video stream
 
