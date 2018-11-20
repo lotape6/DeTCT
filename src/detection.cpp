@@ -38,7 +38,7 @@ public:
     uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
 
     low_H = 7;     //¿ORANGE?
-    high_H = 45;
+    high_H = 30;
 
     low_S = 110;     //Else White or gray
     high_S = 255;
@@ -71,12 +71,21 @@ public:
 
     // Define Erosion operation
     int erosion_size = 4;
+    int dilation_size = 15;
+
     cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                            cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
                                            cv::Point( erosion_size, erosion_size ) );
 
     /// Apply the erosion operation
     cv::erode( b_mask, b_mask, element );
+
+    // Define Dilating operation
+    element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                       cv::Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+                                       cv::Point( dilation_size, dilation_size ) );
+    /// Apply the dilation operation
+    cv::dilate( b_mask, b_mask, element );
 
     // Draw an example circle on the video stream
 
