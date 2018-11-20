@@ -3,6 +3,10 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <string>
+#include <iostream>
+
+
 
 class detection
 {
@@ -30,6 +34,18 @@ public:
   {
     namespace enc = sensor_msgs::image_encodings;
 
+    //Color Limits (HSV)
+    uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
+
+    low_H = 7;     //¿ORANGE?
+    high_H = 45;
+
+    low_S = 110;     //Else White or gray
+    high_S = 255;
+
+    low_V = 64;     //Else Black
+    high_V = 255;
+
     cv_bridge::CvImagePtr cv_ptr;
     cv::Mat hsv_img;
     cv_bridge::CvImage img_bridge;
@@ -45,18 +61,21 @@ public:
       return;
     }
 
-    // PERFORM DETECTION
+    cv::Mat b_mask(cv_ptr->image.size(),cv_ptr->image.type());
 
+    // BGR to HSV
     cv::cvtColor(cv_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
 
+
+    cv::inRange(hsv_img, cv::Scalar(low_H, low_S, low_V), cv::Scalar(high_H, high_S, high_V), b_mask);
+
+
     // Draw an example circle on the video stream
-    if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
-      cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
     std_msgs::Header header; // empty header
     header = cv_ptr->header; // user defined counter
 
-    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, hsv_img);
+    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::MONO8  , b_mask);
     img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
       // Output modified video stream
     image_pub_.publish(img_msg); //cv_ptr
