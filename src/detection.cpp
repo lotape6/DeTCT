@@ -40,7 +40,7 @@ public:
     low_H = 7;     //¿ORANGE?
     high_H = 30;
 
-    low_S = 110;     //Else White or gray
+    low_S = 100;     //Else White or gray
     high_S = 255;
 
     low_V = 64;     //Else Black
@@ -71,21 +71,14 @@ public:
 
     // Define Erosion operation
     int erosion_size = 4;
-    int dilation_size = 15;
+    int dilation_size = 8;
+    int opening_size = 5;
 
     cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                           cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
-                                           cv::Point( erosion_size, erosion_size ) );
-
-    /// Apply the erosion operation
-    cv::erode( b_mask, b_mask, element );
-
-    // Define Dilating operation
-    element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                       cv::Size( 2*dilation_size + 1, 2*dilation_size+1 ),
-                                       cv::Point( dilation_size, dilation_size ) );
-    /// Apply the dilation operation
-    cv::dilate( b_mask, b_mask, element );
+                                           cv::Size( 2*opening_size + 1, 2*opening_size+1 ),
+                                           cv::Point( opening_size, opening_size ) );
+    // Execute opening operation
+    cv::morphologyEx(b_mask, b_mask, cv::MORPH_OPEN, element);
 
     // Draw an example circle on the video stream
 
