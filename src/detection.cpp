@@ -7,7 +7,6 @@
 #include <iostream>
 
 
-
 class detection
 {
   ros::NodeHandle nh_;
@@ -48,6 +47,7 @@ public:
 
     cv_bridge::CvImagePtr cv_ptr;
     cv::Mat hsv_img;
+
     cv_bridge::CvImage img_bridge;
     sensor_msgs::Image img_msg; // >> message to be sent
 
@@ -62,6 +62,7 @@ public:
     }
 
     cv::Mat b_mask(cv_ptr->image.size(),cv_ptr->image.type());
+    cv::Mat dst = cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
 
     // BGR to HSV
     cv::cvtColor(cv_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
@@ -70,20 +71,37 @@ public:
     cv::inRange(hsv_img, cv::Scalar(low_H, low_S, low_V), cv::Scalar(high_H, high_S, high_V), b_mask);
 
     // Define Erosion operation
-    int erosion_size = 4;
+    int erosion_size = 5;
     cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                            cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
                                            cv::Point( erosion_size, erosion_size ) );
-
     /// Apply the erosion operation
     cv::erode( b_mask, b_mask, element );
+    cv::dilate( b_mask, b_mask, element );
 
-    // Draw an example circle on the video stream
+
+
+    // Find contours
+    std::vector<std::vector<cv::Point> > contours;
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours( b_mask, contours, hierarchy,
+        cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE );
+
+    //Draw contours
+    //int idx = 0;
+    //for( ; idx >= 0; idx = hierarchy[idx][0] )
+    int idx;
+    for(idx=0;idx<contours.size();idx++)
+    {
+        cv::Scalar color( idx*25, (contours.size()-idx)*25, idx*25 );
+        cv::drawContours( dst, contours, idx, color, CV_FILLED, 8, hierarchy );
+    }
+
 
     std_msgs::Header header; // empty header
     header = cv_ptr->header; // user defined counter
 
-    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::MONO8  , b_mask);
+    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8  , dst);
     img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
       // Output modified video stream
     image_pub_.publish(img_msg); //cv_ptr
