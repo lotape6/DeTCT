@@ -1,11 +1,15 @@
 #include <ros/ros.h>
+#include <ros/console.h>
+#include <math.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Quaternion.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <string>
 #include <iostream>
-
 
 class detection
 {
@@ -13,6 +17,7 @@ class detection
   image_transport::ImageTransport it_;
   image_transport::Subscriber image_sub_;
   image_transport::Publisher image_pub_;
+  ros::Subscriber sub;
 
 public:
   detection()
@@ -22,17 +27,43 @@ public:
     image_sub_ = it_.subscribe("/camera/rgb/image_raw", 1,
       &detection::imageCb, this);
     image_pub_ = it_.advertise("/image_converter/output_video", 1);
-
+    //                    ,&detection::poseH,this);
+    sub = nh_.subscribe("/vicon_client/AsusXtionPro/pose",1
+                        ,&detection::poseH,this);
   }
 
   ~detection()
   {
   }
 
+  void poseH(const geometry_msgs::PoseStamped& p){
+    ROS_INFO_STREAM("X: "<<p.pose.position.x<<" , Y: "<<p.pose.position.y<<" , Z: "<<p.pose.position.z);
+    geometry_msgs::Quaternion q=p.pose.orientation;
+    double roll, pitch, yaw;
+    double sinr_cosp = +2.0 * (q.w * q.x + q.y * q.z);
+  	double cosr_cosp = +1.0 - 2.0 * (q.x * q.x + q.y * q.y);
+  	roll = atan2(sinr_cosp, cosr_cosp);
+
+  	// pitch (y-axis rotation)
+  	double sinp = +2.0 * (q.w * q.y - q.z * q.x);
+  	if (fabs(sinp) >= 1)
+  		pitch = copysign(M_PI / 2, sinp); // use 90 degrees if out of range
+  	else
+  		pitch = asin(sinp);
+
+  	// yaw (z-axis rotation)
+  	double siny_cosp = +2.0 * (q.w * q.z + q.x * q.y);
+  	double cosy_cosp = +1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+  	yaw = atan2(siny_cosp, cosy_cosp);
+
+    ROS_INFO_STREAM("Roll: "<<roll<<" , Pitch: "<<pitch<<" , Yaw: "<<yaw);
+
+
+  }
+
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
   {
     namespace enc = sensor_msgs::image_encodings;
-
     //Color Limits (HSV)
     uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
 
