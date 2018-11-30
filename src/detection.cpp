@@ -2,6 +2,7 @@
 #include <ros/console.h>
 #include <math.h>
 #include <image_transport/image_transport.h>
+#include <image_transport/subscriber_filter.h>//
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <geometry_msgs/Pose.h>
@@ -11,31 +12,28 @@
 #include <string>
 #include <iostream>
 #include "tf/transform_datatypes.h"
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <boost/bind.hpp>
 
+
+namespace enc = sensor_msgs::image_encodings;
 
 class detection
 {
-  ros::NodeHandle nh_;
-  image_transport::ImageTransport it_;
-  image_transport::Subscriber image_sub_;
-  image_transport::Subscriber depth_sub_;
-  image_transport::Publisher image_pub_;
-  ros::Subscriber sub;
-
-
 public:
   detection()
-    : it_(nh_)
-  {
+    : it_(nh_),
     // Subscrive to input video feed and publish output video feed
-    image_sub_ = it_.subscribe("/camera/rgb/image_raw", 1,
-      &detection::imageCb, this);
-    // image_sub_ = it_.subscribe("/camera/depth/image_raw", 1,
-    //   &detection::imageCb, this);
-    image_pub_ = it_.advertise("/image_converter/output_video", 1);
-    //                    ,&detection::poseRead,this);
-    sub = nh_.subscribe("/vicon_client/AsusXtionPro/pose",1
-                        ,&detection::poseRead,this);
+    image_sub_(nh_,"/camera/rgb/image_raw", 1),
+    depth_sub_(nh_,"/camera/depth/image", 80),
+    pose_sub_(nh_,"/vicon_client/AsusXtionPro/pose",80),
+    sync(MySyncPolicy(10),image_sub_, depth_sub_,pose_sub_)
+{
+
+    image_pub_ = it_.advertise("/image_converter/output_video", 5);
+    sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2, _3));
   }
 
   ~detection()
@@ -43,42 +41,27 @@ public:
   }
 
 
-  void poseRead(const geometry_msgs::PoseStamped& p)
+
+
+  void imageCb(const sensor_msgs::ImageConstPtr& msg,
+               const sensor_msgs::ImageConstPtr& depth_msg,
+               const geometry_msgs::PoseStampedConstPtr& p)
+
   {
+    printf("HOLAPUTO");
     double roll, pitch, yaw;
-    tf::Quaternion quat(p.pose.orientation.x,
-                        p.pose.orientation.y,
-                        p.pose.orientation.z,
-                        p.pose.orientation.w);
+    tf::Quaternion quat(p->pose.orientation.x,
+                        p->pose.orientation.y,
+                        p->pose.orientation.z,
+                        p->pose.orientation.w);
 
     //Transform quaternions to Euler angles
     tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
 
-    ROS_INFO_STREAM("X: "<<p.pose.position.x<<" , Y: "<<p.pose.position.y<<" , Z: "<<p.pose.position.z);
+    ROS_INFO_STREAM("X: "<<p->pose.position.x<<" , Y: "<<p->pose.position.y<<" , Z: "<<p->pose.position.z);
     ROS_INFO_STREAM("Roll: "<<roll<<" , Pitch: "<<pitch<<" , Yaw: "<<yaw);
-  }
-
-  // void depthRead(const sensor_msgs::ImageConstPtr& depth_msg)
-  // {
-  //   cv_bridge::CvImagePtr cv_ptr;
-  //   cv_bridge::CvImage depth_bridge;
-  //
-  //   try
-  //   {
-  //     depth_written=false;
-  //     cv_ptr = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::BGR8);
-  //   }
-  //   catch (cv_bridge::Exception& e)
-  //   {
-  //     ROS_ERROR("cv_bridge (depth) exception: %s", e.what());
-  //     return;
-  //   }
-  // }
 
 
-  void imageCb(const sensor_msgs::ImageConstPtr& msg)
-  {
-    namespace enc = sensor_msgs::image_encodings;
     //Color Limits (HSV)
     uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
 
@@ -109,7 +92,7 @@ public:
 
     cv::Mat b_mask(cv_ptr->image.size(),cv_ptr->image.type());
     cv::Mat drw = cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
-    cv::Mat  dist= cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
+    cv::Mat dist= cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
 
     // BGR to HSV
     cv::cvtColor(cv_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
@@ -143,16 +126,16 @@ public:
 
     for( int i = 0; i < contours.size(); i++ )
    {
-     //Defined precision polygon approximation
-     cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
-     boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
-     cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
-     // cv::minEnclosingCircle( (cv::Mat)contours_poly[i], center[i], radius[i] );
+       //Defined precision polygon approximation
+       cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
+       boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
+       cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
+       // cv::minEnclosingCircle( (cv::Mat)contours_poly[i], center[i], radius[i] );
 
-     //Drawing contours
-     cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
-     cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
-     // cv::circle( drw, center[i], (int)radius[i], color, 2, 8, 0 );
+       //Drawing contours
+       cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
+       cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+       // cv::circle( drw, center[i], (int)radius[i], color, 2, 8, 0 );
    }
 
    // if(depth_written){
@@ -163,11 +146,27 @@ public:
     std_msgs::Header header; // empty header
     header = cv_ptr->header; // user defined counter
 
-    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8 ,drw);
+    img_bridge = cv_bridge::CvImage(header, enc::MONO8 ,drw);
     img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
       // Output modified video stream
     image_pub_.publish(img_msg); //cv_ptr
   }
+
+private:
+  ros::NodeHandle nh_;
+  image_transport::ImageTransport it_;
+  message_filters::Subscriber<sensor_msgs::Image> image_sub_;
+  message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
+  image_transport::Publisher image_pub_;
+  message_filters::Subscriber<geometry_msgs::PoseStamped> pose_sub_;
+
+  // Define sync policy
+  typedef message_filters::sync_policies::ApproximateTime<
+    sensor_msgs::Image, sensor_msgs::Image, geometry_msgs::PoseStamped
+  > MySyncPolicy;
+  message_filters::Synchronizer<MySyncPolicy> sync;
+
+
 };
 
 int main(int argc, char** argv)
