@@ -109,7 +109,8 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES detct
-  CATKIN_DEPENDS cv_bridge image_transport message_generation message_runtime roscpp rospy sensor_msgs std_msgs
+  CATKIN_DEPENDS cv_bridge image_transport message_generation
+	 message_runtime roscpp rospy sensor_msgs std_msgs roslaunch
   #DEPENDS system_lib
 )
 
@@ -125,7 +126,6 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
-
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/detct.cpp
@@ -140,6 +140,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
  add_executable(detection src/detection.cpp)
+
 
 
 

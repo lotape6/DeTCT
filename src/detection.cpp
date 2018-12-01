@@ -8,10 +8,10 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Quaternion.h>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <string>
+// #include <string>
 #include <iostream>
 #include "tf/transform_datatypes.h"
-
+//
 
 class detection
 {
@@ -30,14 +30,12 @@ public:
     // Subscrive to input video feed and publish output video feed
     image_sub_ = it_.subscribe("/camera/rgb/image_raw", 1,
       &detection::imageCb, this);
-    // image_sub_ = it_.subscribe("/camera/depth/image_raw", 1,
-    //   &detection::imageCb, this);
-    image_pub_ = it_.advertise("/image_converter/output_video", 1);
+     // image_sub_ = it_.subscribe("/camera/depth/image_raw", 1,
+     //   &detection::imageCb, this);
+    image_pub_ = it_.advertise("/image_converter/output_video", 5   );
     //                    ,&detection::poseRead,this);
-    sub = nh_.subscribe("/vicon_client/AsusXtionPro/pose",1
-                        ,&detection::poseRead,this);
+    sub = nh_.subscribe("/pose",1, &detection::poseRead,this);
   }
-
   ~detection()
   {
   }
@@ -163,7 +161,7 @@ public:
     std_msgs::Header header; // empty header
     header = cv_ptr->header; // user defined counter
 
-    img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8 ,drw);
+    img_bridge = cv_bridge::CvImage(header, enc::RGB8 ,drw);
     img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
       // Output modified video stream
     image_pub_.publish(img_msg); //cv_ptr
