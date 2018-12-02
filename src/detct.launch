@@ -1,0 +1,14 @@
+<launch>
+  <!--         Detection example launch          -->
+
+
+  <!--                Run rviz                   -->
+  <node   pkg="rviz" type="rviz"  name="rviz" />
+
+
+  <!--     Run detection node with asus pose     -->
+  <node pkg="detct" type="detection" name="detection" output="screen">
+    <remap from="pose" to="vicon_client/AsusXtionPro/pose" />
+  </node>
+
+</launch>
