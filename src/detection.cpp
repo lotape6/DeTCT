@@ -14,6 +14,7 @@
 #include "tf/transform_datatypes.h"
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
+#include <message_filters/cache.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <boost/bind.hpp>
 
@@ -25,31 +26,67 @@ class detection
 public:
   detection()
     : it_(nh_),
-    // Subscrive to input video feed and publish output video feed
+    // Subscribe to RGB img, depth img and to satamped pose
     image_sub_(nh_,"/camera/rgb/image_raw", 1),
-    depth_sub_(nh_,"/camera/depth/image", 80),
-    pose_sub_(nh_,"/vicon_client/AsusXtionPro/pose",80),
-    sync(MySyncPolicy(10),image_sub_, depth_sub_,pose_sub_)
+    depth_sub_(nh_,"/camera/depth/image", 1),
+    pose_sub_(nh_,"/pose",1),
+    // Initialize Approx time synchronizer and pose cache
+    sync(MySyncPolicy(10),image_sub_, depth_sub_),
+    cache(pose_sub_, 100)
+    // Pose is cached due to his bigger rate
 {
-
+    // Initialize the publisher and assing callback to the synchronizer
     image_pub_ = it_.advertise("/image_converter/output_video", 5);
-    sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2, _3));
+    sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2));
   }
 
   ~detection()
   {
   }
 
-
-
-
+  // Define the image [rgb, depth] callback (which also takes position)
   void imageCb(const sensor_msgs::ImageConstPtr& msg,
-               const sensor_msgs::ImageConstPtr& depth_msg,
-               const geometry_msgs::PoseStampedConstPtr& p)
+               const sensor_msgs::ImageConstPtr& depth_msg)
 
   {
-    printf("HOLAPUTO");
+    //-----------------------Define variables-----------------------//
+    //Color Limits (HSV)
+    uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
+
+    //CV_Bridge
+    cv_bridge::CvImage img_bridge;
+
+    //ROS image msg
+    sensor_msgs::Image img_msg; // >> message to be sent
+    cv_bridge::CvImagePtr rgb_ptr, depth_ptr;
+
+    //Euler angles
     double roll, pitch, yaw;
+
+    //OpenCV images
+    cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat hsv_img;
+
+    //Morphological operations (er_size = erosion size)
+    int er_size;
+    cv::Mat element;
+
+    //Contours variables
+    std::vector<std::vector<cv::Point> > contours;
+    std::vector<cv::Vec4i> hierarchy;
+
+    //-----------------End of variable declarations------------------//
+
+    //Get image header
+    std_msgs::Header h = msg->header;
+
+    //---------------------------Get Pose----------------------------//
+    //Get the a pose close to image timestamp
+    geometry_msgs::PoseStampedConstPtr p;
+    p=cache.getElemAfterTime(h.stamp);
+
     tf::Quaternion quat(p->pose.orientation.x,
                         p->pose.orientation.y,
                         p->pose.orientation.z,
@@ -58,71 +95,55 @@ public:
     //Transform quaternions to Euler angles
     tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
 
-    ROS_INFO_STREAM("X: "<<p->pose.position.x<<" , Y: "<<p->pose.position.y<<" , Z: "<<p->pose.position.z);
-    ROS_INFO_STREAM("Roll: "<<roll<<" , Pitch: "<<pitch<<" , Yaw: "<<yaw);
+    //DEBUG MESSAGES
+    // ROS_INFO_STREAM("X: "<<p->pose.position.x<<" , Y: "<<p->pose.position.y<<" , Z: "<<p->pose.position.z);
+    // ROS_INFO_STREAM("Roll: "<<roll<<" , Pitch: "<<pitch<<" , Yaw: "<<yaw);
 
 
-    //Color Limits (HSV)
-    uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
 
-    low_H = 7;     //¿ORANGE?
-    high_H = 45;
-
-    low_S = 110;     //Else White or gray
-    high_S = 255;
-
-    low_V = 64;     //Else Black
-    high_V = 255;
-
-    cv_bridge::CvImagePtr cv_ptr;
-    cv::Mat hsv_img;
-
-    cv_bridge::CvImage img_bridge;
-    sensor_msgs::Image img_msg; // >> message to be sent
-
-    try
-    {
-      cv_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
+    //--------------------------Get images---------------------------//
+    try {
+      rgb_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
+      depth_ptr = cv_bridge::toCvCopy(depth_msg, "32FC1");
     }
-    catch (cv_bridge::Exception& e)
-    {
+    catch (cv_bridge::Exception& e) {
       ROS_ERROR("cv_bridge exception: %s", e.what());
       return;
     }
 
-    cv::Mat b_mask(cv_ptr->image.size(),cv_ptr->image.type());
-    cv::Mat drw = cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
-    cv::Mat dist= cv::Mat::zeros(cv_ptr->image.rows, cv_ptr->image.cols, CV_8UC3);
+    //------------Get binary mask and perform a opening---------------//
+    // Define HSV limits for color segmentation
+    low_H = 7;    high_H = 45;     //ORANGE
+    low_S = 110;  high_S = 255;    //Else White or gray
+    low_V = 64;   high_V = 255;    //Else Black
 
-    // BGR to HSV
-    cv::cvtColor(cv_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
 
-
-    cv::inRange(hsv_img, cv::Scalar(low_H, low_S, low_V), cv::Scalar(high_H, high_S, high_V), b_mask);
+    // BGR to HSV and find binary mask with HSV limits
+    cv::cvtColor(rgb_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
+    cv::inRange(hsv_img,
+                cv::Scalar(low_H, low_S, low_V),
+                cv::Scalar(high_H, high_S, high_V),
+                b_mask);
 
     // Define Erosion operation
-    int erosion_size = 5;
-    cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                           cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
-                                           cv::Point( erosion_size, erosion_size ) );
+    er_size = 8;
+    element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                         cv::Size( 2*er_size + 1, 2*er_size+1 ),
+                                         cv::Point( er_size, er_size ) );
     /// Apply the erosion operation
     cv::erode( b_mask, b_mask, element );
     cv::dilate( b_mask, b_mask, element );
 
-    //--------------------Contours---------------------//
+    //----------------Get contours and bounding box------------------//
 
     // Find contours
-    std::vector<std::vector<cv::Point> > contours;
-    std::vector<cv::Vec4i> hierarchy;
     cv::findContours( b_mask, contours, hierarchy,
-        cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE );
+                      cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE );
 
     /// Approximate contours to polygons + get bounding rects and circles
     std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
     std::vector<cv::Rect> boundRect( contours.size() );
     std::vector<cv::Point2f>center( contours.size() );
-    // std::vector<float>radius( contours.size() );
-    /// Draw polygonal contour + bonding rects + circles
 
     for( int i = 0; i < contours.size(); i++ )
    {
@@ -130,26 +151,17 @@ public:
        cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
        boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
        cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
-       // cv::minEnclosingCircle( (cv::Mat)contours_poly[i], center[i], radius[i] );
 
        //Drawing contours
        cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
        cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
-       // cv::circle( drw, center[i], (int)radius[i], color, 2, 8, 0 );
    }
 
-   // if(depth_written){
-     // dist=depth_image_ptr->image.mul(b_mask);
-
-   // }
-
-    std_msgs::Header header; // empty header
-    header = cv_ptr->header; // user defined counter
-
-    img_bridge = cv_bridge::CvImage(header, enc::MONO8 ,drw);
-    img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
+   //------------Transform image to msg and publish it------------//
+    img_bridge = cv_bridge::CvImage(h, enc::RGB8 ,drw);
+    img_bridge.toImageMsg(img_msg);
       // Output modified video stream
-    image_pub_.publish(img_msg); //cv_ptr
+    image_pub_.publish(img_msg);
   }
 
 private:
@@ -159,10 +171,10 @@ private:
   message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
   image_transport::Publisher image_pub_;
   message_filters::Subscriber<geometry_msgs::PoseStamped> pose_sub_;
-
+  message_filters::Cache<geometry_msgs::PoseStamped> cache;
   // Define sync policy
   typedef message_filters::sync_policies::ApproximateTime<
-    sensor_msgs::Image, sensor_msgs::Image, geometry_msgs::PoseStamped
+    sensor_msgs::Image, sensor_msgs::Image
   > MySyncPolicy;
   message_filters::Synchronizer<MySyncPolicy> sync;
 
