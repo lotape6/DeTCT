@@ -46,9 +46,7 @@ public:
 
   // Define the image [rgb, depth] callback (which also takes position)
   void imageCb(const sensor_msgs::ImageConstPtr& msg,
-               const sensor_msgs::ImageConstPtr& depth_msg)
-
-  {
+               const sensor_msgs::ImageConstPtr& depth_msg)  {
     //-----------------------Define variables-----------------------//
     //Color Limits (HSV)
     uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
@@ -65,8 +63,9 @@ public:
 
     //OpenCV images
     cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat b_mask_float = cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
     cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
-    cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
     cv::Mat hsv_img;
 
     //Morphological operations (er_size = erosion size)
@@ -130,9 +129,13 @@ public:
     element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                          cv::Size( 2*er_size + 1, 2*er_size+1 ),
                                          cv::Point( er_size, er_size ) );
-    /// Apply the erosion operation
+    // Apply the erosion operation
     cv::erode( b_mask, b_mask, element );
     cv::dilate( b_mask, b_mask, element );
+
+    // Multiply the bin.at(ary mask and the depth image to get approximate distance
+    b_mask.convertTo(b_mask_float, CV_32FC1, 1/255.0);
+    dist=depth_ptr->image.mul(b_mask_float);
 
     //----------------Get contours and bounding box------------------//
 
@@ -158,7 +161,7 @@ public:
    }
 
    //------------Transform image to msg and publish it------------//
-    img_bridge = cv_bridge::CvImage(h, enc::RGB8 ,drw);
+    img_bridge = cv_bridge::CvImage(h, "32FC1" ,dist);
     img_bridge.toImageMsg(img_msg);
       // Output modified video stream
     image_pub_.publish(img_msg);
