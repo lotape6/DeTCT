@@ -18,7 +18,8 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <boost/bind.hpp>
 
-
+#define MIN_OBJ_HEIGH 3
+#define MIN_OBJ_WIDTH 3
 namespace enc = sensor_msgs::image_encodings;
 
 class detection
@@ -141,23 +142,60 @@ public:
 
     // Find contours
     cv::findContours( b_mask, contours, hierarchy,
-                      cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE );
+                      cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
 
     /// Approximate contours to polygons + get bounding rects and circles
     std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
     std::vector<cv::Rect> boundRect( contours.size() );
     std::vector<cv::Point2f>center( contours.size() );
+    std::vector<float> objDist( contours.size(), 0.0 );
 
-    for( int i = 0; i < contours.size(); i++ )
-   {
-       //Defined precision polygon approximation
-       cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
-       boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
-       cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
+    for( int i = 0; i < contours.size(); i++ ){
 
-       //Drawing contours
-       cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
-       cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+      //Defined precision polygon approximation
+      cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
+      boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
+      cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
+
+      //Calculate estimated height
+
+      bool flag=true;
+
+      //Discard small objects
+      if (boundRect[i].height < MIN_OBJ_HEIGH && boundRect[i].width < MIN_OBJ_WIDTH){
+        flag = false;
+      }
+
+      int icont, jcont;
+      float actual_float;
+      int dist_values;
+      int x_init=boundRect[i].tl().x;
+      int y_init=boundRect[i].tl().y;
+      int x_fin=boundRect[i].br().x;
+      int y_fin=boundRect[i].br().y;
+      if (flag){
+        dist_values=1;
+
+        //Iterate through contour
+        for( icont = x_init; icont < x_fin; icont++ ){
+          for( jcont = y_init; jcont < y_fin; jcont++ ){
+
+            actual_float = dist.at<float>(icont, jcont);  //Get the distance value
+
+              if ( actual_float > 0.0 && actual_float < 1000.0){     //Chech for valid distance value
+                objDist[i] = objDist[i] + actual_float;
+                dist_values ++;
+              }
+
+          }
+        }
+        objDist[i] = objDist[i]/dist_values;
+        printf("Distancia del objeto %d: %f\r\n", i, objDist[i]);
+        printf("Points token %d: %d\r\n", i, dist_values);
+      }
+      //Drawing contours
+      cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
+      cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
    }
 
    //------------Transform image to msg and publish it------------//
