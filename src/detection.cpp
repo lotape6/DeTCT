@@ -180,7 +180,7 @@ public:
         for( icont = x_init; icont < x_fin; icont++ ){
           for( jcont = y_init; jcont < y_fin; jcont++ ){
 
-            actual_float = dist.at<float>(icont, jcont);  //Get the distance value
+            actual_float = dist.at<float>(jcont, icont);  //Get the distance value
 
               if ( actual_float > 0.0 && actual_float < 1000.0){     //Chech for valid distance value
                 objDist[i] = objDist[i] + actual_float;
