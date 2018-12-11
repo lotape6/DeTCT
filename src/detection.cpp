@@ -71,12 +71,20 @@ public:
     //Color Limits (HSV)
     uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
 
+<<<<<<< HEAD
     //CV_Bridge
     cv_bridge::CvImage img_bridge;
 
     //ROS image msg
     sensor_msgs::Image img_msg; // >> message to be sent
     cv_bridge::CvImagePtr rgb_ptr, depth_ptr;
+=======
+    low_H = 7;     //¿ORANGE?
+    high_H = 30;
+
+    low_S = 100;     //Else White or gray
+    high_S = 255;
+>>>>>>> 16f0176f0ed0a765b34fe5f995eca8582e41e9f2
 
     //Euler angles and position of the camera
     double roll, pitch, yaw;
@@ -157,6 +165,7 @@ public:
                 b_mask);
 
     // Define Erosion operation
+<<<<<<< HEAD
     er_size = 6;
     element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                          cv::Size( 2*er_size + 1, 2*er_size+1 ),
@@ -193,6 +202,17 @@ public:
       //Calculate estimated height
 
       bool flag=true;
+=======
+    int erosion_size = 4;
+    int dilation_size = 8;
+    int opening_size = 5;
+
+    cv::Mat element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                           cv::Size( 2*opening_size + 1, 2*opening_size+1 ),
+                                           cv::Point( opening_size, opening_size ) );
+    // Execute opening operation
+    cv::morphologyEx(b_mask, b_mask, cv::MORPH_OPEN, element);
+>>>>>>> 16f0176f0ed0a765b34fe5f995eca8582e41e9f2
 
       //Discard small objects
       if (boundRect[i].height < MIN_OBJ_HEIGH && boundRect[i].width < MIN_OBJ_WIDTH){
