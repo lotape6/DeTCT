@@ -8,10 +8,11 @@
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Quaternion.h>
+#include <geometry_msgs/Transform.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <string>
 #include <iostream>
-#include "tf/transform_datatypes.h"
+#include <tf/tf.h>///transform_datatypes.h
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/cache.h>
@@ -20,6 +21,24 @@
 
 #define MIN_OBJ_HEIGH 3
 #define MIN_OBJ_WIDTH 3
+
+////////////////////////////////////////////////////////////////////////////
+//                Angle per pixel of the camera                           //
+////////////////////////////////////////////////////////////////////////////
+//  Horizontal Field Of View = 58 (deg)  1.012291  (rad)                  //
+//  Vertical Field Of View   = 45 (deg)  0.7853982 (rad)                  //
+//  Resolution = 640x480 (px)                                             //
+//                                                                        //
+//  Horiz. Angle per Pixel(HAP) = 1.012291/640 = 0.00158170468  (rad/px)  //
+//  Vert. Angle per Pixel (VAP) = 0.7853982/480 = 0.00163624625 (rad/px)  //
+////////////////////////////////////////////////////////////////////////////
+// *******! Please note that if any camera parameter changes,  !*******
+// *******!      you might changes the values below            !*******
+#define HAP 0.00158170468
+#define VAP 0.00163624625
+#define H_CENTER 320
+#define V_CENTER 240
+
 namespace enc = sensor_msgs::image_encodings;
 
 class detection
@@ -28,7 +47,7 @@ public:
   detection()
     : it_(nh_),
     // Subscribe to RGB img, depth img and to satamped pose
-    image_sub_(nh_,"/camera/rgb/image_raw", 1),
+    image_sub_(nh_,"/image", 1),
     depth_sub_(nh_,"/camera/depth/image", 1),
     pose_sub_(nh_,"/pose",1),
     // Initialize Approx time synchronizer and pose cache
@@ -59,8 +78,9 @@ public:
     sensor_msgs::Image img_msg; // >> message to be sent
     cv_bridge::CvImagePtr rgb_ptr, depth_ptr;
 
-    //Euler angles
+    //Euler angles and position of the camera
     double roll, pitch, yaw;
+    float x, y, z;
 
     //OpenCV images
     cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
@@ -91,6 +111,17 @@ public:
                         p->pose.orientation.y,
                         p->pose.orientation.z,
                         p->pose.orientation.w);
+
+    //Get the position of the camera
+    x=p->pose.position.x;
+    y=p->pose.position.y;
+    z=p->pose.position.z;
+
+    //Create transformation between global frame and camera frame
+    // World to Camera Transformation = W_C_Transform
+    tf::Vector3 CameraTranslation(x,y,z);
+    tf::Transform W_C_Transform(quat,CameraTranslation);
+
 
     //Transform quaternions to Euler angles
     tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
@@ -126,7 +157,7 @@ public:
                 b_mask);
 
     // Define Erosion operation
-    er_size = 8;
+    er_size = 6;
     element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                          cv::Size( 2*er_size + 1, 2*er_size+1 ),
                                          cv::Point( er_size, er_size ) );
@@ -147,8 +178,10 @@ public:
     /// Approximate contours to polygons + get bounding rects and circles
     std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
     std::vector<cv::Rect> boundRect( contours.size() );
+    std::vector<cv::Rect> aerealBoundRect( contours.size() );
     std::vector<cv::Point2f>center( contours.size() );
     std::vector<float> objDist( contours.size(), 0.0 );
+    std::vector<geometry_msgs::Point> objPoseEst(contours.size());
 
     for( int i = 0; i < contours.size(); i++ ){
 
@@ -173,26 +206,43 @@ public:
       int y_init=boundRect[i].tl().y;
       int x_fin=boundRect[i].br().x;
       int y_fin=boundRect[i].br().y;
+
       if (flag){
-        dist_values=1;
+        dist_values=0;
 
         //Iterate through contour
         for( icont = x_init; icont < x_fin; icont++ ){
           for( jcont = y_init; jcont < y_fin; jcont++ ){
 
-            actual_float = dist.at<float>(jcont, icont);  //Get the distance value
+            //Get the distance value
+            actual_float = dist.at<float>(jcont, icont);
 
-              if ( actual_float > 0.0 && actual_float < 1000.0){     //Chech for valid distance value
-                objDist[i] = objDist[i] + actual_float;
-                dist_values ++;
-              }
+            //Chech for valid distance value
+            if ( actual_float > 0.0 && actual_float < 100.0){
+              objDist[i] = objDist[i] + actual_float;
+              dist_values ++;
+            }
 
           }
         }
+        // Get the average distance of the object i
         objDist[i] = objDist[i]/dist_values;
-        printf("Distancia del objeto %d: %f\r\n", i, objDist[i]);
-        printf("Points token %d: %d\r\n", i, dist_values);
+        // printf("Distancia del objeto %d: %f\r\n", i, objDist[i]);
+        // printf("Points token %d: %d\r\n", i, dist_values);
       }
+      //Calculate camera_relative angle of the object i
+      float rot_z=(x_init+(boundRect[i].width/2.0)-H_CENTER)*HAP;
+      float rot_y=(y_init+(boundRect[i].height/2.0)-V_CENTER)*VAP;
+      tf::Vector3 ObjectTranslation(objDist[i],0,0);
+      tf::Quaternion ObjectRotation(0,rot_y,rot_z);
+      tf::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
+      C_I_Transform.mult(W_C_Transform,C_I_Transform);
+      ObjectTranslation=C_I_Transform.getOrigin();
+      objPoseEst[i].x=ObjectTranslation.getX();
+      objPoseEst[i].y=ObjectTranslation.getY();
+      objPoseEst[i].z=ObjectTranslation.getZ();
+
+      printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
       //Drawing contours
       cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
       cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );

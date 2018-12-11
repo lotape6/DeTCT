@@ -1,6 +1,9 @@
 <launch>
   <!--         Detection example launch          -->
 
+  <!--    Run image_proc to rectify the image    -->
+  <node name="image_proc" pkg="image_proc" type="image_proc" ns="camera/rgb"/>
+
 
   <!--                Run rviz                   -->
   <node   pkg="rviz" type="rviz"  name="rviz" />
@@ -8,7 +11,9 @@
 
   <!--     Run detection node with asus pose     -->
   <node pkg="detct" type="detection" name="detection" output="screen">
+    <remap from="image" to="/camera/rgb/image_rect_color" />
     <remap from="pose" to="vicon_client/AsusXtionPro/pose" />
+
   </node>
 
 </launch>
