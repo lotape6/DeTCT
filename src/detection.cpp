@@ -19,8 +19,10 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <boost/bind.hpp>
 
-#define MIN_OBJ_HEIGH 3
-#define MIN_OBJ_WIDTH 3
+#define MIN_OBJ_HEIGH 3      //px
+#define MIN_OBJ_WIDTH 3      //px
+#define DEPTH_TOLERANCE 0.1  //m
+#define EXP_COEF 20          //px (Expansion Coeficient)
 
 ////////////////////////////////////////////////////////////////////////////
 //                Angle per pixel of the camera                           //
@@ -34,10 +36,10 @@
 ////////////////////////////////////////////////////////////////////////////
 // *******! Please note that if any camera parameter changes,  !*******
 // *******!      you might changes the values below            !*******
-#define HAP 0.00158170468
-#define VAP 0.00163624625
-#define H_CENTER 320
-#define V_CENTER 240
+#define HAP 0.00158170468   //(rad/px)
+#define VAP 0.00163624625   //(rad/px)
+#define H_CENTER 320        //px
+#define V_CENTER 240        //px
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -84,10 +86,15 @@ public:
 
     //OpenCV images
     cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
+    cv::Mat b_mask_aux = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
+    cv::Mat b_mask_combined = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
     cv::Mat b_mask_float = cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
     cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
     cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
     cv::Mat hsv_img;
+    //Image iterators
+    int icont, jcont;
+    float actual_float;
 
     //Morphological operations (er_size = erosion size)
     int er_size;
@@ -165,21 +172,72 @@ public:
     cv::erode( b_mask, b_mask, element );
     cv::dilate( b_mask, b_mask, element );
 
+    //----------------Improve b_mask with depth data------------------//
+    cv::findContours( b_mask, contours, hierarchy,
+                      cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
+    std::vector<std::vector<cv::Point> > contours_poly_init( contours.size() );
+    std::vector<cv::Rect> boundRectInit( contours.size() );
+
+    for (int i=0; i < contours.size(); i++ ){
+      cv::approxPolyDP( cv::Mat(contours[i]), contours_poly_init[i], 3, true );
+      boundRectInit[i] = cv::boundingRect( cv::Mat(contours_poly_init[i]) );
+
+      //Define bounding limits
+      int x_init=boundRectInit[i].tl().x;
+      int y_init=boundRectInit[i].tl().y;
+      int x_fin=boundRectInit[i].br().x;
+      int y_fin=boundRectInit[i].br().y;
+      bool f_flag = false;
+      //Search for a depth value corresponding with a point of the b_mask
+      for( icont = x_init; icont < x_fin; icont++ ){
+        for( jcont = y_init; jcont < y_fin; jcont++ ){
+          if(b_mask.at<int>(jcont,icont)) {
+            actual_float = depth_ptr->image.at<float>(jcont, icont);
+            if(actual_float>0 && actual_float<100) {f_flag=true; break;}
+          }
+        }
+        if(f_flag) break;
+      }
+
+      //Get the binary mask of the objects at a given distance from depth image
+      cv::inRange(depth_ptr->image,
+                  actual_float-DEPTH_TOLERANCE,
+                  actual_float+DEPTH_TOLERANCE,
+                  b_mask_aux);
+
+      //Create mask to eliminate objects out of the corresponding bounding box
+      cv::Mat mask = cv::Mat::zeros( msg->height, msg->width, CV_8UC1); // all 0
+
+      //If the bounding rect is in the limit do not expand the bounds
+      if( x_init-EXP_COEF < 0 || y_init-EXP_COEF < 0 ||
+          x_fin+EXP_COEF > 2*V_CENTER || y_fin+EXP_COEF >2*H_CENTER){
+        cv::rectangle(mask, cv::Point(x_init, y_init), cv::Point(x_fin, y_fin), cv::Scalar(1), -1); //-1 = FILLED
+      }
+      //Expand the bounding limits to get the full object
+      else{
+        cv::rectangle(mask, cv::Point(x_init-EXP_COEF,y_init-EXP_COEF),
+                     cv::Point(x_fin+EXP_COEF,y_fin+EXP_COEF), cv::Scalar(1), -1); //-1 = FILLED
+      }
+
+      b_mask_aux = b_mask_aux.mul(mask);
+      morphologyEx( b_mask_aux, b_mask_aux, cv::MORPH_OPEN, element );
+      b_mask_combined = b_mask_combined + b_mask_aux + b_mask;
+    }
+
     // Multiply the bin.at(ary mask and the depth image to get approximate distance
-    b_mask.convertTo(b_mask_float, CV_32FC1, 1/255.0);
+    b_mask_combined.convertTo(b_mask_float, CV_32FC1, 1/255.0);
     dist=depth_ptr->image.mul(b_mask_float);
 
     //----------------Get contours and bounding box------------------//
 
     // Find contours
-    cv::findContours( b_mask, contours, hierarchy,
+    cv::findContours( b_mask_combined, contours, hierarchy,
                       cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
 
-    /// Approximate contours to polygons + get bounding rects and circles
+    /// Approximate contours to polygons + get bounding
     std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
     std::vector<cv::Rect> boundRect( contours.size() );
     std::vector<cv::Rect> aerealBoundRect( contours.size() );
-    std::vector<cv::Point2f>center( contours.size() );
     std::vector<float> objDist( contours.size(), 0.0 );
     std::vector<geometry_msgs::Point> objPoseEst(contours.size());
 
@@ -190,7 +248,7 @@ public:
       boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
       cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
 
-      //Calculate estimated height
+    //--------------Get estimate distance to objects-----------------//
 
       bool flag=true;
 
@@ -199,13 +257,12 @@ public:
         flag = false;
       }
 
-      int icont, jcont;
-      float actual_float;
+      //Get a small rectangle centered inside the boundRect to avoid distance errors
       int dist_values;
-      int x_init=boundRect[i].tl().x;
-      int y_init=boundRect[i].tl().y;
-      int x_fin=boundRect[i].br().x;
-      int y_fin=boundRect[i].br().y;
+      int x_init=boundRect[i].tl().x+boundRect[i].width/4;
+      int y_init=boundRect[i].tl().y+boundRect[i].height/4;
+      int x_fin=boundRect[i].br().x-boundRect[i].width/4;
+      int y_fin=boundRect[i].br().y-boundRect[i].height/4;
 
       if (flag){
         dist_values=0;
@@ -249,7 +306,7 @@ public:
    }
 
    //------------Transform image to msg and publish it------------//
-    img_bridge = cv_bridge::CvImage(h, "32FC1" ,dist);
+    img_bridge = cv_bridge::CvImage(h, "8UC3" ,drw);
     img_bridge.toImageMsg(img_msg);
       // Output modified video stream
     image_pub_.publish(img_msg);
@@ -276,6 +333,8 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "detect");
   detection ic;
-  ros::spin();
+  while(ros::ok()){
+    ros::spin();
+  }
   return 0;
 }
