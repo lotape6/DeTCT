@@ -110,7 +110,8 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES detct
-  CATKIN_DEPENDS cv_bridge image_transport message_generation message_runtime roscpp rospy sensor_msgs std_msgs tf	
+  CATKIN_DEPENDS cv_bridge image_transport message_generation message_runtime roscpp rospy sensor_msgs std_msgs tf
+  visualization_msgs
   #DEPENDS system_lib
 )
 

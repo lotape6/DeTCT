@@ -18,11 +18,35 @@
 #include <message_filters/cache.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <boost/bind.hpp>
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+///////////////////////////////////////////////////////////////////////////
+//                    IMAGE PROCESSING PARAMETERS                        //
+///////////////////////////////////////////////////////////////////////////
 
-#define MIN_OBJ_HEIGH 3      //px
-#define MIN_OBJ_WIDTH 3      //px
+// Define HSV limits for color segmentation
+#define LOW_H 7
+#define HIGH_H 45     //ORANGE
+#define LOW_S 110
+#define HIGH_S 255    //ELSE WHITE OR GRAY
+#define LOW_V 64
+#define HIGH_V 255    //ELSE BLACK
+
+
+// Object size discrimination
+#define MIN_OBJ_HEIGH 20      //px
+#define MIN_OBJ_WIDTH 20      //px
+
+// Object depth tolerance for inRange
 #define DEPTH_TOLERANCE 0.1  //m
-#define EXP_COEF 20          //px (Expansion Coeficient)
+
+// Bounding expansion due to bad color segmentation
+#define EXP_COEF 10          //px (Expansion Coeficient)
+
+// Edges detection parameters
+#define EDGE_THRESHOLD 40    // THRESHOLD_INF = EDGE_THRESHOLD
+#define EDGE_RATIO 8        // THRESHOLD_SUP = EDGE_THRESHOLD+EDGE_RATIO
+#define EDGE_OPENING_SIZE 3
 
 ////////////////////////////////////////////////////////////////////////////
 //                Angle per pixel of the camera                           //
@@ -48,7 +72,7 @@ class detection
 public:
   detection()
     : it_(nh_),
-    // Subscribe to RGB img, depth img and to satamped pose
+    // Subscribe to bgr img, depth img and to satamped pose
     image_sub_(nh_,"/image", 1),
     depth_sub_(nh_,"/camera/depth/image", 1),
     pose_sub_(nh_,"/pose",1),
@@ -60,38 +84,73 @@ public:
     // Initialize the publisher and assing callback to the synchronizer
     image_pub_ = it_.advertise("/image_converter/output_video", 5);
     sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2));
+    lastest_marker_id = 0;
+    markers_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("/detct/estimated_objects_markers", 1);
   }
 
   ~detection()
   {
   }
+  void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses){
 
-  // Define the image [rgb, depth] callback (which also takes position)
+    visualization_msgs::MarkerArray markersArray;
+
+    for (int i = 0; i < n_markers; i++){
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "vicon";
+      marker.header.stamp = ros::Time();
+      marker.ns = "detct";
+      marker.id = lastest_marker_id;
+      marker.type = visualization_msgs::Marker::SPHERE;
+      marker.action = visualization_msgs::Marker::ADD;
+      marker.pose.position.x = objects_poses[i].x;
+      marker.pose.position.y = objects_poses[i].y;
+      marker.pose.position.z = objects_poses[i].z;
+        marker.pose.orientation.x = 0.0;
+      marker.pose.orientation.y = 0.0;
+      marker.pose.orientation.z = 0.0;
+      marker.pose.orientation.w = 1.0;
+      marker.scale.x = 0.1;
+      marker.scale.y = 0.1;
+      marker.scale.z = 0.1;
+      marker.color.a = 1.0; // Don't forget to set the alpha!
+      marker.color.r = 0.0;
+      marker.color.g = 1.0;
+      marker.color.b = 0.0;
+
+
+      lastest_marker_id ++;
+      markersArray.markers.push_back(marker);
+    }
+    markers_pub_.publish( markersArray );
+
+  }
+
+  // Define the image [bgr, depth] callback (which also takes position)
   void imageCb(const sensor_msgs::ImageConstPtr& msg,
                const sensor_msgs::ImageConstPtr& depth_msg)  {
     //-----------------------Define variables-----------------------//
-    //Color Limits (HSV)
-    uint8_t low_H, low_S, low_V, high_H, high_S, high_V;
-
     //CV_Bridge
     cv_bridge::CvImage img_bridge;
 
     //ROS image msg
     sensor_msgs::Image img_msg; // >> message to be sent
-    cv_bridge::CvImagePtr rgb_ptr, depth_ptr;
+    cv_bridge::CvImagePtr bgr_ptr, depth_ptr;
 
     //Euler angles and position of the camera
     double roll, pitch, yaw;
     float x, y, z;
 
     //OpenCV images
+    cv::Mat edges = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
     cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
     cv::Mat b_mask_aux = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
     cv::Mat b_mask_combined = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
     cv::Mat b_mask_float = cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
     cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
     cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
-    cv::Mat hsv_img;
+    cv::Mat hsv_img, bgr[3];
+
     //Image iterators
     int icont, jcont;
     float actual_float;
@@ -141,27 +200,23 @@ public:
 
     //--------------------------Get images---------------------------//
     try {
-      rgb_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
+      bgr_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
       depth_ptr = cv_bridge::toCvCopy(depth_msg, "32FC1");
     }
     catch (cv_bridge::Exception& e) {
       ROS_ERROR("cv_bridge exception: %s", e.what());
       return;
     }
-
-    //------------Get binary mask and perform a opening---------------//
-    // Define HSV limits for color segmentation
-    low_H = 7;    high_H = 45;     //ORANGE
-    low_S = 110;  high_S = 255;    //Else White or gray
-    low_V = 64;   high_V = 255;    //Else Black
-
+    //Split bgr image into separated single channel image
+    cv::split(bgr_ptr->image,bgr);
 
     // BGR to HSV and find binary mask with HSV limits
-    cv::cvtColor(rgb_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
+    cv::cvtColor(bgr_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
     cv::inRange(hsv_img,
-                cv::Scalar(low_H, low_S, low_V),
-                cv::Scalar(high_H, high_S, high_V),
+                cv::Scalar(LOW_H, LOW_S, LOW_V),
+                cv::Scalar(HIGH_H, HIGH_S, HIGH_V),
                 b_mask);
+
 
     // Define Erosion operation
     er_size = 6;
@@ -187,7 +242,7 @@ public:
       int y_init=boundRectInit[i].tl().y;
       int x_fin=boundRectInit[i].br().x;
       int y_fin=boundRectInit[i].br().y;
-      bool f_flag = false;
+      bool f_flag = false;     //For exiting flag
       //Search for a depth value corresponding with a point of the b_mask
       for( icont = x_init; icont < x_fin; icont++ ){
         for( jcont = y_init; jcont < y_fin; jcont++ ){
@@ -220,9 +275,13 @@ public:
       }
 
       b_mask_aux = b_mask_aux.mul(mask);
+      // Detect Edges
+      // Canny( bgr[2].mul(mask), edges, EDGE_THRESHOLD,EDGE_THRESHOLD*EDGE_RATIO, EDGE_OPENING_SIZE );
+
       morphologyEx( b_mask_aux, b_mask_aux, cv::MORPH_OPEN, element );
-      b_mask_combined = b_mask_combined + b_mask_aux + b_mask;
+      b_mask_combined = b_mask_combined + b_mask_aux + b_mask ;
     }
+    
 
     // Multiply the bin.at(ary mask and the depth image to get approximate distance
     b_mask_combined.convertTo(b_mask_float, CV_32FC1, 1/255.0);
@@ -240,6 +299,8 @@ public:
     std::vector<cv::Rect> aerealBoundRect( contours.size() );
     std::vector<float> objDist( contours.size(), 0.0 );
     std::vector<geometry_msgs::Point> objPoseEst(contours.size());
+
+    int n_objects = 0;
 
     for( int i = 0; i < contours.size(); i++ ){
 
@@ -286,25 +347,27 @@ public:
         objDist[i] = objDist[i]/dist_values;
         // printf("Distancia del objeto %d: %f\r\n", i, objDist[i]);
         // printf("Points token %d: %d\r\n", i, dist_values);
+
+        //Calculate camera_relative angle of the object i
+        float rot_z=(x_init+(boundRect[i].width/2.0)-H_CENTER)*HAP;
+        float rot_y=(y_init+(boundRect[i].height/2.0)-V_CENTER)*VAP;
+        tf::Vector3 ObjectTranslation(objDist[i],0,0);
+        tf::Quaternion ObjectRotation(0,rot_y,rot_z);
+        tf::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
+        C_I_Transform.mult(W_C_Transform,C_I_Transform);
+        ObjectTranslation=C_I_Transform.getOrigin();
+        objPoseEst[n_objects].x=ObjectTranslation.getX();
+        objPoseEst[n_objects].y=ObjectTranslation.getY();
+        objPoseEst[n_objects].z=ObjectTranslation.getZ();
+        n_objects ++;
+
+        printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
+        //Drawing contours
+        cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
+        cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
       }
-      //Calculate camera_relative angle of the object i
-      float rot_z=(x_init+(boundRect[i].width/2.0)-H_CENTER)*HAP;
-      float rot_y=(y_init+(boundRect[i].height/2.0)-V_CENTER)*VAP;
-      tf::Vector3 ObjectTranslation(objDist[i],0,0);
-      tf::Quaternion ObjectRotation(0,rot_y,rot_z);
-      tf::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
-      C_I_Transform.mult(W_C_Transform,C_I_Transform);
-      ObjectTranslation=C_I_Transform.getOrigin();
-      objPoseEst[i].x=ObjectTranslation.getX();
-      objPoseEst[i].y=ObjectTranslation.getY();
-      objPoseEst[i].z=ObjectTranslation.getZ();
-
-      printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
-      //Drawing contours
-      cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
-      cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
    }
-
+   publishMarkers(n_objects, objPoseEst);
    //------------Transform image to msg and publish it------------//
     img_bridge = cv_bridge::CvImage(h, "8UC3" ,drw);
     img_bridge.toImageMsg(img_msg);
@@ -325,7 +388,8 @@ private:
     sensor_msgs::Image, sensor_msgs::Image
   > MySyncPolicy;
   message_filters::Synchronizer<MySyncPolicy> sync;
-
+  ros::Publisher markers_pub_;
+  int lastest_marker_id;
 
 };
 
