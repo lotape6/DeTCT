@@ -1,0 +1,22 @@
+<launch>
+  <!--         Detection example launch          -->
+
+  <!--    Run image_proc to rectify the image    -->
+  <node name="image_proc" pkg="image_proc" type="image_proc" ns="camera/rgb"/>
+
+
+  <!--                Run rviz                   -->
+  <node   pkg="rviz" type="rviz"  name="rviz" args="-d $(find detct)/launch/detct.rviz"/>
+
+
+  <!--     Run detection node with asus pose
+  <arg name="image_topic" default="/camera/rgb/image_rect_color" />
+   -->
+  <node pkg="detct" type="detection" name="detection" output="screen">
+    <param name="config/image_topic"  type="str"    value="/camera/rgb/image_rect_color"/>
+    <param name="config/depth_topic"  type="str"    value="/camera/depth/image"/>
+    <param name="config/pose_topic"   type="str"   value="/vicon_client/AsusXtionPro/pose"/>
+
+  </node>
+
+</launch>
