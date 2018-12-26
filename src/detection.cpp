@@ -37,6 +37,7 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
   // Pose is cached due to his bigger rate
 {
   // Initialize the publisher and assing callback to the synchronizer
+  getInputParams(nh_);
   image_pub_ = it_.advertise("/image_converter/output_video", 5);
   sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2));
   lastest_marker_id = 0;
@@ -45,6 +46,35 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
 
 detection::~detection()
 {
+}
+// const int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
+//           S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
+//           V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
+//
+//           MIN_OBJ_HEIGH, MIN_OBJ_WIDTH,
+//
+//           DEPTH_BOUND_RECT_EXPANSION_COEF;
+//
+// const float DEPTH_THRESHOLD_TOLERANCE;
+void detection::getInputParams(ros::NodeHandle nh_){
+  // std::string foo;
+  if( nh_.getParam("/detection/image_proc_params/h_low", H_LOWER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/h_high",H_UPPER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/s_low", S_LOWER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/s_high",S_UPPER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/v_low", V_LOWER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/v_high",V_UPPER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/min_obj_width",MIN_OBJ_WIDTH) &&
+      nh_.getParam("/detection/image_proc_params/min_obj_height",MIN_OBJ_HEIGHT) &&
+      nh_.getParam("/detection/image_proc_params/depth_segmentation_tolerance",DEPTH_THRESHOLD_TOLERANCE) &&
+      nh_.getParam("/detection/image_proc_params/depth_bound_expansion_coef",DEPTH_BOUND_RECT_EXPANSION_COEF)){
+
+    ROS_INFO_STREAM("Image processing parameters received");
+     }
+  else{
+    ROS_ERROR("Image processing parameters not received!");
+  }
+
 }
 
 void detection::publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses){
@@ -161,8 +191,8 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   // BGR to HSV and find binary mask with HSV limits
   cv::cvtColor(bgr_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
   cv::inRange(hsv_img,
-              cv::Scalar(LOW_H, LOW_S, LOW_V),
-              cv::Scalar(HIGH_H, HIGH_S, HIGH_V),
+              cv::Scalar(H_LOWER_THRESHOLD, S_LOWER_THRESHOLD, V_LOWER_THRESHOLD),
+              cv::Scalar(H_UPPER_THRESHOLD, S_UPPER_THRESHOLD, V_UPPER_THRESHOLD),
               b_mask);
 
 
@@ -190,36 +220,43 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     int y_init=boundRectInit[i].tl().y;
     int x_fin=boundRectInit[i].br().x;
     int y_fin=boundRectInit[i].br().y;
-    bool f_flag = false;     //For exiting flag
+    bool depth_founded = false;     //For exiting flag
     //Search for a depth value corresponding with a point of the b_mask
     for( icont = x_init; icont < x_fin; icont++ ){
       for( jcont = y_init; jcont < y_fin; jcont++ ){
         if(b_mask.at<int>(jcont,icont)) {
           actual_float = depth_ptr->image.at<float>(jcont, icont);
-          if(actual_float>0 && actual_float<100) {f_flag=true; break;}
+          if(actual_float>0 && actual_float<100) {depth_founded=true; break;}
         }
       }
-      if(f_flag) break;
+      if(depth_founded) break;
     }
 
     //Get the binary mask of the objects at a given distance from depth image
     cv::inRange(depth_ptr->image,
-                actual_float-DEPTH_TOLERANCE,
-                actual_float+DEPTH_TOLERANCE,
+                actual_float-DEPTH_THRESHOLD_TOLERANCE,
+                actual_float+DEPTH_THRESHOLD_TOLERANCE,
                 b_mask_aux);
 
     //Create mask to eliminate objects out of the corresponding bounding box
     cv::Mat mask = cv::Mat::zeros( msg->height, msg->width, CV_8UC1); // all 0
 
     //If the bounding rect is in the limit do not expand the bounds
-    if( x_init-EXP_COEF < 0 || y_init-EXP_COEF < 0 ||
-        x_fin+EXP_COEF > 2*V_CENTER || y_fin+EXP_COEF >2*H_CENTER){
-      cv::rectangle(mask, cv::Point(x_init, y_init), cv::Point(x_fin, y_fin), cv::Scalar(1), -1); //-1 = FILLED
+    if( x_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
+        y_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
+        x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF > 2*V_CENTER ||
+        y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF >2*H_CENTER){
+      cv::rectangle(mask, cv::Point(x_init, y_init),
+                          cv::Point(x_fin, y_fin),
+                          cv::Scalar(1), -1); //-1 = FILLED
     }
     //Expand the bounding limits to get the full object
     else{
-      cv::rectangle(mask, cv::Point(x_init-EXP_COEF,y_init-EXP_COEF),
-                   cv::Point(x_fin+EXP_COEF,y_fin+EXP_COEF), cv::Scalar(1), -1); //-1 = FILLED
+      cv::rectangle(mask, cv::Point(x_init-DEPTH_BOUND_RECT_EXPANSION_COEF,
+                                    y_init-DEPTH_BOUND_RECT_EXPANSION_COEF),
+                          cv::Point(x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF,
+                                    y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF),
+                          cv::Scalar(1), -1); //-1 = FILLED
     }
 
     b_mask_aux = b_mask_aux.mul(mask);
@@ -259,11 +296,11 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
 
   //--------------Get estimate distance to objects-----------------//
 
-    bool flag=true;
+    bool obj_is_big_enough=true;
 
     //Discard small objects
-    if (boundRect[i].height < MIN_OBJ_HEIGH && boundRect[i].width < MIN_OBJ_WIDTH){
-      flag = false;
+    if (boundRect[i].height < MIN_OBJ_HEIGHT && boundRect[i].width < MIN_OBJ_WIDTH){
+      obj_is_big_enough = false;
     }
 
     //Get a small rectangle centered inside the boundRect to avoid distance errors
@@ -273,7 +310,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     int x_fin=boundRect[i].br().x-boundRect[i].width/4;
     int y_fin=boundRect[i].br().y-boundRect[i].height/4;
 
-    if (flag){
+    if (obj_is_big_enough){
       dist_values=0;
 
       //Iterate through contour
@@ -333,7 +370,7 @@ int main(int argc, char** argv)
      nh_.getParam("/detection/config/depth_topic", depth_topic) &&
      nh_.getParam("/detection/config/pose_topic", pose_topic)){
 
-    ROS_INFO_STREAM("Parameters received");
+    ROS_INFO_STREAM("Topic names received");
      }
   else{
     ROS_ERROR("Parameters not received!");

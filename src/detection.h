@@ -30,29 +30,26 @@
 //                    IMAGE PROCESSING PARAMETERS                        //
 ///////////////////////////////////////////////////////////////////////////
 
-// Define HSV limits for color segmentation
-#define LOW_H 7
-#define HIGH_H 45     //ORANGE
-#define LOW_S 110
-#define HIGH_S 255    //ELSE WHITE OR GRAY
-#define LOW_V 64
-#define HIGH_V 255    //ELSE BLACK
+// // Define HSV limits for color segmentation
+// #define LOW_H 7
+// #define HIGH_H 45     //ORANGE
+// #define LOW_S 110
+// #define HIGH_S 255    //ELSE WHITE OR GRAY
+// #define LOW_V 64
+// #define HIGH_V 255    //ELSE BLACK
+//
+//
+// // Object size discrimination
+// #define MIN_OBJ_HEIGH 20      //px
+// #define MIN_OBJ_WIDTH 20      //px
+//
+// // Object depth tolerance for inRange
+// #define DEPTH_TOLERANCE 0.1  //m
+//
+// // Bounding expansion due to bad color segmentation
+// #define EXP_COEF 10          //px (Expansion Coeficient)
 
 
-// Object size discrimination
-#define MIN_OBJ_HEIGH 20      //px
-#define MIN_OBJ_WIDTH 20      //px
-
-// Object depth tolerance for inRange
-#define DEPTH_TOLERANCE 0.1  //m
-
-// Bounding expansion due to bad color segmentation
-#define EXP_COEF 10          //px (Expansion Coeficient)
-
-// Edges detection parameters
-#define EDGE_THRESHOLD 40    // THRESHOLD_INF = EDGE_THRESHOLD
-#define EDGE_RATIO 8        // THRESHOLD_SUP = EDGE_THRESHOLD+EDGE_RATIO
-#define EDGE_OPENING_SIZE 3
 
 ////////////////////////////////////////////////////////////////////////////
 //                Angle per pixel of the camera                           //
@@ -80,6 +77,7 @@ public:
 
   void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses);
   void imageCb(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
+  void getInputParams(ros::NodeHandle nh_);
 
 private:
 
@@ -99,6 +97,15 @@ private:
   ros::Publisher markers_pub_;
   int lastest_marker_id;
 
+  int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
+            S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
+            V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
+
+            MIN_OBJ_HEIGHT, MIN_OBJ_WIDTH,
+
+            DEPTH_BOUND_RECT_EXPANSION_COEF;
+
+  float DEPTH_THRESHOLD_TOLERANCE;
 
 };
 
