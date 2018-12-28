@@ -5,14 +5,18 @@
   <node name="image_proc" pkg="image_proc" type="image_proc" ns="camera/rgb"/>
 
 
+  <!--                Run rviz                   -->
+  <node   pkg="rviz" type="rviz"  name="rviz" args="-d $(find detct)/launch/detct.rviz"/>
+
+
   <!--            Run detection node             -->
   <node pkg="detct" type="detection" name="detection" output="screen">
     <param name="config/image_topic"  type="str"  value="/camera/rgb/image_rect_color"/>
     <param name="config/depth_topic"  type="str"  value="/camera/depth/image"/>
     <param name="config/pose_topic"   type="str"  value="/vicon_client/AsusXtionPro/pose"/>
 
-    <param name="image_proc_params/h_low"    type="int"  value="0"/>
-    <param name="image_proc_params/h_high"   type="int"  value="19"/>
+    <param name="image_proc_params/h_low"    type="int"  value="7"/>
+    <param name="image_proc_params/h_high"   type="int"  value="45"/>
     <param name="image_proc_params/s_low"    type="int"  value="110"/>
     <param name="image_proc_params/s_high"   type="int"  value="255"/>
     <param name="image_proc_params/v_low"    type="int"  value="64"/>
@@ -24,7 +28,7 @@
     <param name="image_proc_params/depth_segmentation_tolerance"   type="double"  value="0.1"/>
     <param name="image_proc_params/depth_bound_expansion_coef"   type="int"  value="10"/>
 
-    <param name="time/pose2camera_delay"   type="double"  value="18000"/>
+    <param name="time/pose2camera_delay"   type="double"  value="18000.023674"/>
 
   </node>
 

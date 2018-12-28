@@ -13,7 +13,11 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <string>
 #include <iostream>
-#include <tf/tf.h>///transform_datatypes.h
+// #include <tf/tf.h>///transform_datatypes.h
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Vector3.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/cache.h>
@@ -30,10 +34,10 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
   // Subscribe to bgr img, depth img and to satamped pose
   image_sub_(nh_,image_topic, 1),
   depth_sub_(nh_,depth_topic, 1),
-  pose_sub_(nh_,pose_topic,1),
+  pose_sub_(nh_,pose_topic,100),
   // Initialize Approx time synchronizer and pose cache
   sync(MySyncPolicy(10),image_sub_, depth_sub_),
-  cache(pose_sub_, 100)
+  cache(pose_sub_, 100000)
   // Pose is cached due to his bigger rate
 {
   // Initialize the publisher and assing callback to the synchronizer
@@ -42,20 +46,14 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
   sync.registerCallback(boost::bind(&detection::imageCb,this, _1, _2));
   lastest_marker_id = 0;
   markers_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("/detct/estimated_objects_markers", 1);
+  sync_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("detct/sync_poseStamped",1);
 }
 
 detection::~detection()
 {
 }
-// const int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
-//           S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
-//           V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
-//
-//           MIN_OBJ_HEIGH, MIN_OBJ_WIDTH,
-//
-//           DEPTH_BOUND_RECT_EXPANSION_COEF;
-//
-// const float DEPTH_THRESHOLD_TOLERANCE;
+
+
 void detection::getInputParams(ros::NodeHandle nh_){
   // std::string foo;
   if( nh_.getParam("/detection/image_proc_params/h_low", H_LOWER_THRESHOLD) &&
@@ -73,6 +71,10 @@ void detection::getInputParams(ros::NodeHandle nh_){
      }
   else{
     ROS_ERROR("Image processing parameters not received!");
+  }
+
+  if ( nh_.param("/detection/time/pose2camera_delay", POSE2CAMERA_DELAY, (float) 0)){
+    ROS_INFO_STREAM("Time delay between camera and pose relative times received");
   }
 
 }
@@ -142,16 +144,24 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   std::vector<cv::Vec4i> hierarchy;
 
   //-----------------End of variable declarations------------------//
-
-  //Get image header
   std_msgs::Header h = msg->header;
-
   //---------------------------Get Pose----------------------------//
   //Get the a pose close to image timestamp
   geometry_msgs::PoseStampedConstPtr p;
-  p=cache.getElemAfterTime(h.stamp);
+  ros::Duration time_diff(POSE2CAMERA_DELAY);
+  ros::Time rgb_stamp(h.stamp);
 
-  tf::Quaternion quat(p->pose.orientation.x,
+  p=cache.getElemBeforeTime(rgb_stamp+time_diff);
+
+//
+
+  ROS_INFO_STREAM("Image timestamp --> " << rgb_stamp);
+  // ROS_INFO_STREAM("Image added timestamp --> " << rgb_stamp+time_diff);
+  //
+  // // ROS_INFO_STREAM("Depth timestamp --> " << depth_ptr->header.stamp);
+  // ROS_INFO_STREAM("Pose  timestamp --> " << p->header.stamp);
+
+  tf2::Quaternion quat(p->pose.orientation.x,
                       p->pose.orientation.y,
                       p->pose.orientation.z,
                       p->pose.orientation.w);
@@ -163,18 +173,12 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
 
   //Create transformation between global frame and camera frame
   // World to Camera Transformation = W_C_Transform
-  tf::Vector3 CameraTranslation(x,y,z);
-  tf::Transform W_C_Transform(quat,CameraTranslation);
+  tf2::Vector3 CameraTranslation(x,y,z);
+  tf2::Transform W_C_Transform(quat,CameraTranslation);
 
 
   //Transform quaternions to Euler angles
-  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
-
-  //DEBUG MESSAGES
-  // ROS_INFO_STREAM("X: "<<p->pose.position.x<<" , Y: "<<p->pose.position.y<<" , Z: "<<p->pose.position.z);
-  // ROS_INFO_STREAM("Roll: "<<roll<<" , Pitch: "<<pitch<<" , Yaw: "<<yaw);
-
-
+  tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
 
   //--------------------------Get images---------------------------//
   try {
@@ -334,11 +338,12 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
       // printf("Points token %d: %d\r\n", i, dist_values);
 
       //Calculate camera_relative angle of the object i
-      float rot_z=(x_init+(boundRect[i].width/2.0)-H_CENTER)*HAP;
-      float rot_y=(y_init+(boundRect[i].height/2.0)-V_CENTER)*VAP;
-      tf::Vector3 ObjectTranslation(objDist[i],0,0);
-      tf::Quaternion ObjectRotation(0,rot_y,rot_z);
-      tf::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
+      double rot_z=(x_init+(boundRect[i].width/2.0)-H_CENTER)*HAP;
+      double rot_y=(y_init+(boundRect[i].height/2.0)-V_CENTER)*VAP;
+      tf2::Vector3 ObjectTranslation(objDist[i],0,0);
+      tf2::Quaternion ObjectRotation;
+      ObjectRotation.setRPY((double) 0,rot_y,rot_z);
+      tf2::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
       C_I_Transform.mult(W_C_Transform,C_I_Transform);
       ObjectTranslation=C_I_Transform.getOrigin();
       objPoseEst[n_objects].x=ObjectTranslation.getX();
@@ -346,7 +351,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
       objPoseEst[n_objects].z=ObjectTranslation.getZ();
       n_objects ++;
 
-      printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
+      // printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
       //Drawing contours
       cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
       cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
@@ -358,6 +363,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   img_bridge.toImageMsg(img_msg);
     // Output modified video stream
   image_pub_.publish(img_msg);
+  sync_pose_pub_.publish(p);
 }
 
 

@@ -76,7 +76,7 @@ public:
   ~detection();
 
   void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses);
-  void imageCb(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
+  void imageCb( const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
   void getInputParams(ros::NodeHandle nh_);
 
 private:
@@ -94,18 +94,23 @@ private:
 
 
   image_transport::Publisher image_pub_;
+  ros::Publisher sync_pose_pub_;
   ros::Publisher markers_pub_;
+
   int lastest_marker_id;
 
+
   int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
-            S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
-            V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
+      S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
+      V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
 
-            MIN_OBJ_HEIGHT, MIN_OBJ_WIDTH,
+      MIN_OBJ_HEIGHT, MIN_OBJ_WIDTH,
 
-            DEPTH_BOUND_RECT_EXPANSION_COEF;
+      DEPTH_BOUND_RECT_EXPANSION_COEF;
 
-  float DEPTH_THRESHOLD_TOLERANCE;
+  float DEPTH_THRESHOLD_TOLERANCE,
+
+        POSE2CAMERA_DELAY;
 
 };
 
