@@ -37,7 +37,7 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
   pose_sub_(nh_,pose_topic,100),
   // Initialize Approx time synchronizer and pose cache
   sync(MySyncPolicy(10),image_sub_, depth_sub_),
-  cache(pose_sub_, 100000)
+  cache(pose_sub_, 1000)
   // Pose is cached due to his bigger rate
 {
   // Initialize the publisher and assing callback to the synchronizer
@@ -62,10 +62,12 @@ void detection::getInputParams(ros::NodeHandle nh_){
       nh_.getParam("/detection/image_proc_params/s_high",S_UPPER_THRESHOLD) &&
       nh_.getParam("/detection/image_proc_params/v_low", V_LOWER_THRESHOLD) &&
       nh_.getParam("/detection/image_proc_params/v_high",V_UPPER_THRESHOLD) &&
+      nh_.getParam("/detection/image_proc_params/morph_op_elem_size",ELEM_SIZE) &&
       nh_.getParam("/detection/image_proc_params/min_obj_width",MIN_OBJ_WIDTH) &&
       nh_.getParam("/detection/image_proc_params/min_obj_height",MIN_OBJ_HEIGHT) &&
       nh_.getParam("/detection/image_proc_params/depth_segmentation_tolerance",DEPTH_THRESHOLD_TOLERANCE) &&
-      nh_.getParam("/detection/image_proc_params/depth_bound_expansion_coef",DEPTH_BOUND_RECT_EXPANSION_COEF)){
+      nh_.getParam("/detection/image_proc_params/depth_bound_expansion_coef",DEPTH_BOUND_RECT_EXPANSION_COEF) &&
+      nh_.getParam("/detection/image_proc_params/use_depth_for_detection",USE_DEPTH_FOR_DETECTION)){
 
     ROS_INFO_STREAM("Image processing parameters received");
      }
@@ -124,19 +126,16 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   //OpenCV images
   cv::Mat edges = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
   cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
-  cv::Mat b_mask_aux = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
   cv::Mat b_mask_combined = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
   cv::Mat b_mask_float = cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
   cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
   cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
-  cv::Mat hsv_img, bgr[3];
+  cv::Mat hsv_img;
 
   //Image iterators
   int icont, jcont;
   float actual_float;
 
-  //Morphological operations (er_size = erosion size)
-  int er_size;
   cv::Mat element;
 
   //Contours variables
@@ -155,7 +154,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
 
 //
 
-  ROS_INFO_STREAM("Image timestamp --> " << rgb_stamp);
+  // ROS_INFO_STREAM("Image timestamp --> " << rgb_stamp);
   // ROS_INFO_STREAM("Image added timestamp --> " << rgb_stamp+time_diff);
   //
   // // ROS_INFO_STREAM("Depth timestamp --> " << depth_ptr->header.stamp);
@@ -189,8 +188,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
   }
-  //Split bgr image into separated single channel image
-  cv::split(bgr_ptr->image,bgr);
+
 
   // BGR to HSV and find binary mask with HSV limits
   cv::cvtColor(bgr_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
@@ -201,74 +199,19 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
 
 
   // Define Erosion operation
-  er_size = 6;
+
   element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                       cv::Size( 2*er_size + 1, 2*er_size+1 ),
-                                       cv::Point( er_size, er_size ) );
+                                       cv::Size( 2*ELEM_SIZE + 1, 2*ELEM_SIZE+1 ),
+                                       cv::Point( ELEM_SIZE, ELEM_SIZE ) );
   // Apply the erosion operation
   cv::erode( b_mask, b_mask, element );
   cv::dilate( b_mask, b_mask, element );
 
-  //----------------Improve b_mask with depth data------------------//
-  cv::findContours( b_mask, contours, hierarchy,
-                    cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
-  std::vector<std::vector<cv::Point> > contours_poly_init( contours.size() );
-  std::vector<cv::Rect> boundRectInit( contours.size() );
-
-  for (int i=0; i < contours.size(); i++ ){
-    cv::approxPolyDP( cv::Mat(contours[i]), contours_poly_init[i], 3, true );
-    boundRectInit[i] = cv::boundingRect( cv::Mat(contours_poly_init[i]) );
-
-    //Define bounding limits
-    int x_init=boundRectInit[i].tl().x;
-    int y_init=boundRectInit[i].tl().y;
-    int x_fin=boundRectInit[i].br().x;
-    int y_fin=boundRectInit[i].br().y;
-    bool depth_founded = false;     //For exiting flag
-    //Search for a depth value corresponding with a point of the b_mask
-    for( icont = x_init; icont < x_fin; icont++ ){
-      for( jcont = y_init; jcont < y_fin; jcont++ ){
-        if(b_mask.at<int>(jcont,icont)) {
-          actual_float = depth_ptr->image.at<float>(jcont, icont);
-          if(actual_float>0 && actual_float<100) {depth_founded=true; break;}
-        }
-      }
-      if(depth_founded) break;
-    }
-
-    //Get the binary mask of the objects at a given distance from depth image
-    cv::inRange(depth_ptr->image,
-                actual_float-DEPTH_THRESHOLD_TOLERANCE,
-                actual_float+DEPTH_THRESHOLD_TOLERANCE,
-                b_mask_aux);
-
-    //Create mask to eliminate objects out of the corresponding bounding box
-    cv::Mat mask = cv::Mat::zeros( msg->height, msg->width, CV_8UC1); // all 0
-
-    //If the bounding rect is in the limit do not expand the bounds
-    if( x_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
-        y_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
-        x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF > 2*V_CENTER ||
-        y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF >2*H_CENTER){
-      cv::rectangle(mask, cv::Point(x_init, y_init),
-                          cv::Point(x_fin, y_fin),
-                          cv::Scalar(1), -1); //-1 = FILLED
-    }
-    //Expand the bounding limits to get the full object
-    else{
-      cv::rectangle(mask, cv::Point(x_init-DEPTH_BOUND_RECT_EXPANSION_COEF,
-                                    y_init-DEPTH_BOUND_RECT_EXPANSION_COEF),
-                          cv::Point(x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF,
-                                    y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF),
-                          cv::Scalar(1), -1); //-1 = FILLED
-    }
-
-    b_mask_aux = b_mask_aux.mul(mask);
-    // Detect Edges
-    // Canny( bgr[2].mul(mask), edges, EDGE_THRESHOLD,EDGE_THRESHOLD*EDGE_RATIO, EDGE_OPENING_SIZE );
-
-    morphologyEx( b_mask_aux, b_mask_aux, cv::MORPH_OPEN, element );
-    b_mask_combined = b_mask_combined + b_mask_aux + b_mask ;
+  if(USE_DEPTH_FOR_DETECTION){
+    improveWithDepth (b_mask_combined, b_mask, depth_ptr->image);
+  }
+  else{
+    b_mask_combined=b_mask;
   }
 
 
@@ -364,6 +307,78 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     // Output modified video stream
   image_pub_.publish(img_msg);
   sync_pose_pub_.publish(p);
+}
+
+
+void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth ){
+
+  std::vector<std::vector<cv::Point> > contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::Mat element;
+  cv::Mat b_mask_aux = cv::Mat::zeros(depth.rows, depth.cols, CV_8UC1);
+
+  cv::findContours( b_mask, contours, hierarchy,
+                    cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
+  std::vector<std::vector<cv::Point> > contours_poly_init( contours.size() );
+  std::vector<cv::Rect> boundRectInit( contours.size() );
+  float actual_float;
+  for (int i=0; i < contours.size(); i++ ){
+    cv::approxPolyDP( cv::Mat(contours[i]), contours_poly_init[i], 3, true );
+    boundRectInit[i] = cv::boundingRect( cv::Mat(contours_poly_init[i]) );
+
+    //Define bounding limits
+    int x_init=boundRectInit[i].tl().x;
+    int y_init=boundRectInit[i].tl().y;
+    int x_fin=boundRectInit[i].br().x;
+    int y_fin=boundRectInit[i].br().y;
+    bool depth_founded = false;     //For exiting flag
+    //Search for a depth value corresponding with a point of the b_mask
+    for( int icont = x_init; icont < x_fin; icont++ ){
+      for( int jcont = y_init; jcont < y_fin; jcont++ ){
+        if(b_mask.at<int>(jcont,icont)) {
+          actual_float = depth.at<float>(jcont, icont);
+          if(actual_float>0 && actual_float<100) {depth_founded=true; break;}
+        }
+      }
+      if(depth_founded) break;
+    }
+
+    //Get the binary mask of the objects at a given distance from depth image
+    cv::inRange(depth,
+                actual_float-DEPTH_THRESHOLD_TOLERANCE,
+                actual_float+DEPTH_THRESHOLD_TOLERANCE,
+                b_mask_aux);
+
+    //Create mask to eliminate objects out of the corresponding bounding box
+    cv::Mat mask = cv::Mat::zeros( depth.rows, depth.cols, CV_8UC1); // all 0
+
+    //If the bounding rect is in the limit do not expand the bounds
+    if( x_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
+        y_init-DEPTH_BOUND_RECT_EXPANSION_COEF < 0 ||
+        x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF > 2*V_CENTER ||
+        y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF >2*H_CENTER){
+      cv::rectangle(mask, cv::Point(x_init, y_init),
+                          cv::Point(x_fin, y_fin),
+                          cv::Scalar(1), -1); //-1 = FILLED
+    }
+    //Expand the bounding limits to get the full object
+    else{
+      cv::rectangle(mask, cv::Point(x_init-DEPTH_BOUND_RECT_EXPANSION_COEF,
+                                    y_init-DEPTH_BOUND_RECT_EXPANSION_COEF),
+                          cv::Point(x_fin+DEPTH_BOUND_RECT_EXPANSION_COEF,
+                                    y_fin+DEPTH_BOUND_RECT_EXPANSION_COEF),
+                          cv::Scalar(1), -1); //-1 = FILLED
+    }
+
+    b_mask_aux = b_mask_aux.mul(mask);
+    // Detect Edges
+    // Canny( bgr[2].mul(mask), edges, EDGE_THRESHOLD,EDGE_THRESHOLD*EDGE_RATIO, EDGE_OPENING_SIZE );
+    element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                         cv::Size( 2*ELEM_SIZE + 1, 2*ELEM_SIZE+1 ),
+                                         cv::Point( ELEM_SIZE, ELEM_SIZE ) );
+    morphologyEx( b_mask_aux, b_mask_aux, cv::MORPH_OPEN, element );
+    b_mask_combined = b_mask_combined + b_mask_aux + b_mask ;
+  }
 }
 
 

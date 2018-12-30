@@ -78,6 +78,7 @@ public:
   void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses);
   void imageCb( const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
   void getInputParams(ros::NodeHandle nh_);
+  void improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth );
 
 private:
 
@@ -103,14 +104,14 @@ private:
   int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
       S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
       V_UPPER_THRESHOLD, V_LOWER_THRESHOLD,
-
+      ELEM_SIZE,
       MIN_OBJ_HEIGHT, MIN_OBJ_WIDTH,
-
       DEPTH_BOUND_RECT_EXPANSION_COEF;
 
   float DEPTH_THRESHOLD_TOLERANCE,
-
         POSE2CAMERA_DELAY;
+
+  bool USE_DEPTH_FOR_DETECTION;
 
 };
 

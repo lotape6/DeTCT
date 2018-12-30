@@ -57,6 +57,7 @@ find_package(catkin REQUIRED COMPONENTS
  add_message_files(
    FILES
    Message1.msg
+   Message2.msg
  )
 
 ## Generate services in the 'srv' folder
@@ -143,6 +144,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
  add_executable(detection src/detection.cpp)
+ add_executable(balloons_viz src/balloons_viz.cpp)
 
 
 
@@ -163,7 +165,9 @@ include_directories(
  target_link_libraries(detection
    ${catkin_LIBRARIES}
  )
-
+ target_link_libraries(balloons_viz
+   ${catkin_LIBRARIES}
+ )
 #############
 ## Install ##
 #############
