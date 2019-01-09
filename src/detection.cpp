@@ -34,12 +34,11 @@ detection::detection(ros::NodeHandle nh_, std::string image_topic,std::string de
   // Subscribe to bgr img, depth img and to satamped pose
   image_sub_(nh_,image_topic, 1),
   depth_sub_(nh_,depth_topic, 1),
-  pose_sub_(nh_,pose_topic,100),
-  // Initialize Approx time synchronizer and pose cache
-  sync(MySyncPolicy(10),image_sub_, depth_sub_),
-  cache(pose_sub_, 1000)
-  // Pose is cached due to his bigger rate
+  // Initialize Approx time synchronizer
+  sync(MySyncPolicy(10),image_sub_, depth_sub_)
 {
+  pose_sub_ = nh_.subscribe(pose_topic, 1, &detection::poseCB, this);
+
   // Initialize the publisher and assing callback to the synchronizer
   getInputParams(nh_);
   image_pub_ = it_.advertise("/image_converter/output_video", 5);
@@ -146,11 +145,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   std_msgs::Header h = msg->header;
   //---------------------------Get Pose----------------------------//
   //Get the a pose close to image timestamp
-  geometry_msgs::PoseStampedConstPtr p;
-  ros::Duration time_diff(POSE2CAMERA_DELAY);
-  ros::Time rgb_stamp(h.stamp);
-
-  p=cache.getElemBeforeTime(rgb_stamp+time_diff);
+  geometry_msgs::PoseStamped p = last_vicon_pose;
 
 //
 
@@ -160,15 +155,15 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   // // ROS_INFO_STREAM("Depth timestamp --> " << depth_ptr->header.stamp);
   // ROS_INFO_STREAM("Pose  timestamp --> " << p->header.stamp);
 
-  tf2::Quaternion quat(p->pose.orientation.x,
-                      p->pose.orientation.y,
-                      p->pose.orientation.z,
-                      p->pose.orientation.w);
+  tf2::Quaternion quat(p.pose.orientation.x,
+                      p.pose.orientation.y,
+                      p.pose.orientation.z,
+                      p.pose.orientation.w);
 
   //Get the position of the camera
-  x=p->pose.position.x;
-  y=p->pose.position.y;
-  z=p->pose.position.z;
+  x=p.pose.position.x;
+  y=p.pose.position.y;
+  z=p.pose.position.z;
 
   //Create transformation between global frame and camera frame
   // World to Camera Transformation = W_C_Transform
@@ -309,6 +304,11 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   sync_pose_pub_.publish(p);
 }
 
+
+void detection::poseCB(const geometry_msgs::PoseStampedConstPtr& msg)
+{
+  last_vicon_pose = *msg;
+}
 
 void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth ){
 

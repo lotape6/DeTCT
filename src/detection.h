@@ -77,6 +77,7 @@ public:
 
   void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses);
   void imageCb( const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
+  void poseCB(const geometry_msgs::PoseStampedConstPtr& msg);
   void getInputParams(ros::NodeHandle nh_);
   void improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth );
 
@@ -85,8 +86,8 @@ private:
   image_transport::ImageTransport it_;
   message_filters::Subscriber<sensor_msgs::Image> image_sub_;
   message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
-  message_filters::Subscriber<geometry_msgs::PoseStamped> pose_sub_;
-  message_filters::Cache<geometry_msgs::PoseStamped> cache;
+  
+  ros::Subscriber pose_sub_;
 
   typedef message_filters::sync_policies::ApproximateTime<
     sensor_msgs::Image, sensor_msgs::Image
@@ -100,6 +101,7 @@ private:
 
   int lastest_marker_id;
 
+  geometry_msgs::PoseStamped last_vicon_pose;
 
   int H_UPPER_THRESHOLD, H_LOWER_THRESHOLD,
       S_UPPER_THRESHOLD, S_LOWER_THRESHOLD,
