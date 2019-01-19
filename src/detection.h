@@ -13,6 +13,10 @@
 #include <string>
 #include <iostream>
 #include <tf/tf.h>///transform_datatypes.h
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Vector3.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/cache.h>
@@ -80,13 +84,14 @@ public:
   void poseCB(const geometry_msgs::PoseStampedConstPtr& msg);
   void getInputParams(ros::NodeHandle nh_);
   void improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth );
+  tf2::Vector3 getObjEstPose(tf2::Transform W_C_Transform, cv::Rect boundRect, float objDist,int x_init,int y_init);
 
 private:
 
   image_transport::ImageTransport it_;
   message_filters::Subscriber<sensor_msgs::Image> image_sub_;
   message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
-  
+
   ros::Subscriber pose_sub_;
 
   typedef message_filters::sync_policies::ApproximateTime<
