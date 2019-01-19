@@ -143,8 +143,6 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   std::vector<std::vector<cv::Point> > contours;
   std::vector<cv::Vec4i> hierarchy;
   //-----------------End of variable declarations------------------//
-
-  //Get image header
   std_msgs::Header h = msg->header;
 
   ////////////////////////////////////////////////////////////////////////////
@@ -153,13 +151,6 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
 
   //Get the a pose close to image timestamp
   geometry_msgs::PoseStamped p = last_vicon_pose;
-
-  // ROS_INFO_STREAM("Image timestamp --> " << rgb_stamp);
-  // ROS_INFO_STREAM("Image added timestamp --> " << rgb_stamp+time_diff);
-  //
-  // // ROS_INFO_STREAM("Depth timestamp --> " << depth_ptr->header.stamp);
-  // ROS_INFO_STREAM("Pose  timestamp --> " << p->header.stamp);
-
   tf2::Quaternion quat(p.pose.orientation.x,
                       p.pose.orientation.y,
                       p.pose.orientation.z,
@@ -251,7 +242,7 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
       obj_is_big_enough = false;
     }
 
-    //Get a small rectangle centered inside the boundRect to avoid distance errors
+    //Get a small rectangle centered inside the boundRect to avoid dista,nce errors
     int dist_values;
     int x_init=boundRect[i].tl().x+boundRect[i].width/4;
     int y_init=boundRect[i].tl().y+boundRect[i].height/4;
@@ -259,26 +250,8 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     int y_fin=boundRect[i].br().y-boundRect[i].height/4;
 
     if (obj_is_big_enough){
-      dist_values=0;
 
-      //Iterate through contour
-      for( icont = x_init; icont < x_fin; icont++ ){
-        for( jcont = y_init; jcont < y_fin; jcont++ ){
-
-          //Get the distance value
-          actual_float = dist.at<float>(jcont, icont);
-
-          //Chech for valid distance value
-          if ( actual_float > 0.0 && actual_float < 100.0){
-            objDist[i] = objDist[i] + actual_float;
-            dist_values ++;
-          }
-        }
-      }
-      // Get the average distance of the object i
-      objDist[i] = objDist[i]/dist_values;
-      // printf("Distancia del objeto %d: %f\r\n", i, objDist[i]);
-      // printf("Points token %d: %d\r\n", i, dist_values);
+      objDist[i]=getObjDistance(dist,x_init,x_fin,y_init,y_fin);
 
       //                         GET OBJECT POSE                              //
       tf2::Vector3 ObjectPosition;
@@ -288,7 +261,6 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
       objPoseEst[n_objects].z=ObjectPosition.getZ();
       n_objects ++;
 
-      // printf("X[%d]: %f   Y[%d]: %f   Z[%d]: %f   \r\n", i, objPoseEst[i].x, i, objPoseEst[i].y, i, objPoseEst[i].z );
       //Drawing contours
       cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
       cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
@@ -322,6 +294,29 @@ tf2::Vector3 detection::getObjEstPose(tf2::Transform W_C_Transform, cv::Rect bou
   tf2::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
   C_I_Transform.mult(W_C_Transform,C_I_Transform);
   return ObjectTranslation=C_I_Transform.getOrigin();
+}
+
+float detection::getObjDistance(cv::Mat depth_img, int x_init, int x_fin, int y_init, int y_fin){
+
+  float actual_float=0.0;
+  float object_distance = 0.0;
+  int dist_values=0;
+
+  for( int i = x_init; i < x_fin; i++ ){
+    for( int j = y_init; j < y_fin; j++ ){
+
+      //Get the distance value
+      actual_float = depth_img.at<float>(j, i);
+
+      //Chech for valid distance value
+      if ( actual_float > 0.0 && actual_float < 100.0){
+        object_distance = object_distance + actual_float;
+        dist_values ++;
+      }
+    }
+  }
+  // Get the average distance of the object i
+  return (object_distance/dist_values);
 }
 
 void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth ){

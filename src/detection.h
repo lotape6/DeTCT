@@ -85,7 +85,7 @@ public:
   void getInputParams(ros::NodeHandle nh_);
   void improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth );
   tf2::Vector3 getObjEstPose(tf2::Transform W_C_Transform, cv::Rect boundRect, float objDist,int x_init,int y_init);
-
+  float getObjDistance(cv::Mat depth_img, int x_init, int x_fin, int y_init, int y_fin);
 private:
 
   image_transport::ImageTransport it_;
