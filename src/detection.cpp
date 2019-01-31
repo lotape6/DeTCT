@@ -60,7 +60,8 @@ void detection::getInputParams(ros::NodeHandle nh_){
       nh_.getParam("/detection/image_proc_params/s_high",S_UPPER_THRESHOLD) &&
       nh_.getParam("/detection/image_proc_params/v_low", V_LOWER_THRESHOLD) &&
       nh_.getParam("/detection/image_proc_params/v_high",V_UPPER_THRESHOLD) &&
-      nh_.getParam("/detection/image_proc_params/morph_op_elem_size",ELEM_SIZE) &&
+      nh_.getParam("/detection/image_proc_params/morph_op_erosion_size",EROSION_SIZE) &&
+      nh_.getParam("/detection/image_proc_params/morph_op_dilation_size",DILATION_SIZE) &&
       nh_.getParam("/detection/image_proc_params/min_obj_width",MIN_OBJ_WIDTH) &&
       nh_.getParam("/detection/image_proc_params/min_obj_height",MIN_OBJ_HEIGHT) &&
       nh_.getParam("/detection/image_proc_params/depth_segmentation_tolerance",DEPTH_THRESHOLD_TOLERANCE) &&
@@ -71,10 +72,6 @@ void detection::getInputParams(ros::NodeHandle nh_){
      }
   else{
     ROS_ERROR("Image processing parameters not received!");
-  }
-
-  if ( nh_.param("/detection/time/pose2camera_delay", POSE2CAMERA_DELAY, (float) 0)){
-    ROS_INFO_STREAM("Time delay between camera and pose relative times received");
   }
 
 }
@@ -239,11 +236,16 @@ cv::Mat detection::imageProcessing(cv::Mat hsv_img){
 
   // Define Erosion operation
   element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                       cv::Size( 2*ELEM_SIZE + 1, 2*ELEM_SIZE+1 ),
-                                       cv::Point( ELEM_SIZE, ELEM_SIZE ) );
+                                       cv::Size( 2*EROSION_SIZE + 1, 2*EROSION_SIZE+1 ),
+                                       cv::Point( EROSION_SIZE, EROSION_SIZE ) );
   // Apply the erosion operation
   cv::erode( b_mask, b_mask, element );
+
+  element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                       cv::Size( 2*DILATION_SIZE + 1, 2*DILATION_SIZE+1 ),
+                                       cv::Point( DILATION_SIZE, DILATION_SIZE ) );
   cv::dilate( b_mask, b_mask, element );
+
   return b_mask;
 }
 
@@ -311,12 +313,18 @@ void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv:
     }
 
     b_mask_aux = b_mask_aux.mul(mask);
-    // Detect Edges
-    // Canny( bgr[2].mul(mask), edges, EDGE_THRESHOLD,EDGE_THRESHOLD*EDGE_RATIO, EDGE_OPENING_SIZE );
+    
     element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
-                                         cv::Size( 2*ELEM_SIZE + 1, 2*ELEM_SIZE+1 ),
-                                         cv::Point( ELEM_SIZE, ELEM_SIZE ) );
-    morphologyEx( b_mask_aux, b_mask_aux, cv::MORPH_OPEN, element );
+                                         cv::Size( 2*EROSION_SIZE + 1, 2*EROSION_SIZE+1 ),
+                                         cv::Point( EROSION_SIZE, EROSION_SIZE ) );
+    // Apply the erosion operation
+    cv::erode( b_mask_aux, b_mask_aux, element );
+
+    element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
+                                         cv::Size( 2*DILATION_SIZE + 1, 2*DILATION_SIZE+1 ),
+                                         cv::Point( DILATION_SIZE, DILATION_SIZE ) );
+    cv::dilate( b_mask_aux, b_mask_aux, element );
+
     b_mask_combined = b_mask_combined + b_mask_aux + b_mask ;
   }
 }

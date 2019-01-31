@@ -22,7 +22,8 @@
     <param name="image_proc_params/v_low"    type="int"  value="64"/>
     <param name="image_proc_params/v_high"   type="int"  value="255"/>
 
-    <param name="image_proc_params/morph_op_elem_size"   type="int"  value="6"/>
+    <param name="image_proc_params/morph_op_erosion_size"   type="int"  value="6"/>
+    <param name="image_proc_params/morph_op_dilation_size"   type="int"  value="10"/>
 
 
     <param name="image_proc_params/min_obj_height"   type="int"  value="20"/>
