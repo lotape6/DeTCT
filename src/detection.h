@@ -80,8 +80,9 @@ public:
   ~detection();
 
   void publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses);
-  void imageCb( const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::ImageConstPtr& depth_msg);
+  void imageCb( const sensor_msgs::ImageConstPtr& image_msg, const sensor_msgs::ImageConstPtr& depth_msg);
   void poseCB(const geometry_msgs::PoseStampedConstPtr& msg);
+  cv::Mat imageProcessing(cv::Mat hsv_img);
   void getInputParams(ros::NodeHandle nh_);
   void improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth );
   tf2::Vector3 getObjEstPose(tf2::Transform W_C_Transform, cv::Rect boundRect, float objDist,int x_init,int y_init);

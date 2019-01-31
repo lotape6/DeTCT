@@ -13,7 +13,6 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <string>
 #include <iostream>
-// #include <tf/tf.h>///transform_datatypes.h
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -80,100 +79,66 @@ void detection::getInputParams(ros::NodeHandle nh_){
 
 }
 
-void detection::publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses){
-
-  visualization_msgs::MarkerArray markersArray;
-
-  for (int i = 0; i < n_markers; i++){
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = "vicon";
-    marker.header.stamp = ros::Time();
-    marker.ns = "detct";
-    marker.id = lastest_marker_id;
-    marker.type = visualization_msgs::Marker::SPHERE;
-    marker.action = visualization_msgs::Marker::ADD;
-    marker.pose.position.x = objects_poses[i].x;
-    marker.pose.position.y = objects_poses[i].y;
-    marker.pose.position.z = objects_poses[i].z;
-    marker.scale.x = 0.1;
-    marker.scale.y = 0.1;
-    marker.scale.z = 0.1;
-    marker.color.a = 1.0; // Don't forget to set the alpha!
-    marker.color.g = 1.0;
-    lastest_marker_id ++;
-    markersArray.markers.push_back(marker);
-  }
-  markers_pub_.publish( markersArray );
-
-}
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
 
 // Define the image [bgr, depth] callback (which also takes position)
-void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
+void detection::imageCb(const sensor_msgs::ImageConstPtr& image_msg,
              const sensor_msgs::ImageConstPtr& depth_msg)  {
-  ////////////////////////////////////////////////////////////////////////////
-  //                          DEFINE VARIABLES                              //
-  ///////////////////////////////////////////////////////////////////////////
-  //CV_Bridge
+
+  //OpenCV_Bridge
   cv_bridge::CvImage img_bridge;
 
-  //ROS image msg
-  sensor_msgs::Image img_msg; // >> message to be sent
+  //ROS image image_msg
+  sensor_msgs::Image image_out_msg; // >> message to be sent
   cv_bridge::CvImagePtr bgr_ptr, depth_ptr;
 
   //Euler angles and position of the camera
   double roll, pitch, yaw;
-  float x, y, z;
 
   //OpenCV images
-  cv::Mat edges = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
-  cv::Mat b_mask = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
-  cv::Mat b_mask_combined = cv::Mat::zeros(msg->height, msg->width, CV_8UC1);
-  cv::Mat b_mask_float = cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
-  cv::Mat drw = cv::Mat::zeros(msg->height, msg->width, CV_8UC3);
-  cv::Mat dist= cv::Mat::zeros(msg->height, msg->width, CV_32FC1);
+  cv::Mat edges =           cv::Mat::zeros(image_msg->height, image_msg->width, CV_8UC1);
+  cv::Mat b_mask =          cv::Mat::zeros(image_msg->height, image_msg->width, CV_8UC3);
+  cv::Mat b_mask_combined = cv::Mat::zeros(image_msg->height, image_msg->width, CV_8UC1);
+  cv::Mat b_mask_float =    cv::Mat::zeros(image_msg->height, image_msg->width, CV_32FC1);
+  cv::Mat drw =             cv::Mat::zeros(image_msg->height, image_msg->width, CV_8UC3);
+  cv::Mat dist=             cv::Mat::zeros(image_msg->height, image_msg->width, CV_32FC1);
   cv::Mat hsv_img;
 
   //Image iterators
   int icont, jcont;
   float actual_float;
 
-  cv::Mat element;
+
 
   //Contours variables
   std::vector<std::vector<cv::Point> > contours;
   std::vector<cv::Vec4i> hierarchy;
-  //-----------------End of variable declarations------------------//
-  std_msgs::Header h = msg->header;
 
-  ////////////////////////////////////////////////////////////////////////////
-  //                            GET CAMERA POSE                             //
-  ////////////////////////////////////////////////////////////////////////////
+  //---------------------End of variable declarations----------------------//
 
-  //Get the a pose close to image timestamp
+
+  std_msgs::Header h = image_msg->header;
+
   geometry_msgs::PoseStamped p = last_vicon_pose;
-  tf2::Quaternion quat(p.pose.orientation.x,
-                      p.pose.orientation.y,
-                      p.pose.orientation.z,
-                      p.pose.orientation.w);
-
-  //Get the position of the camera
-  x=p.pose.position.x;
-  y=p.pose.position.y;
-  z=p.pose.position.z;
+  tf2::Quaternion camera_pose_quat(p.pose.orientation.x,
+                                   p.pose.orientation.y,
+                                   p.pose.orientation.z,
+                                   p.pose.orientation.w);
 
   //Create transformation between global frame and camera frame
   // World to Camera Transformation = W_C_Transform
-  tf2::Vector3 CameraTranslation(x,y,z);
-  tf2::Transform W_C_Transform(quat,CameraTranslation);
+  tf2::Vector3 CameraTranslation(p.pose.position.x,
+                                 p.pose.position.y,
+                                 p.pose.position.z);
 
-  //Transform quaternions to Euler angles
-  tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  tf2::Transform W_C_Transform(camera_pose_quat,CameraTranslation);
 
-  ////////////////////////////////////////////////////////////////////////////
-  //                             GET IMAGES                                 //
-  ////////////////////////////////////////////////////////////////////////////
+  tf2::Matrix3x3(camera_pose_quat).getRPY(roll, pitch, yaw);
+
+
   try {
-    bgr_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
+    bgr_ptr = cv_bridge::toCvCopy(image_msg, enc::BGR8);
     depth_ptr = cv_bridge::toCvCopy(depth_msg, "32FC1");
   }
   catch (cv_bridge::Exception& e) {
@@ -181,12 +146,92 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
     return;
   }
 
-  ////////////////////////////////////////////////////////////////////////////
-  //                BINARY MASK AND MORPHOLOGICAL OPERATIONS                //
-  ////////////////////////////////////////////////////////////////////////////
-
-  // BGR to HSV and find binary mask with HSV limits
   cv::cvtColor(bgr_ptr->image, hsv_img, cv::COLOR_BGR2HSV);
+
+  //Perform a lower and higher threshold and perform a closing (erosion + dilation)
+  b_mask = imageProcessing(hsv_img);
+
+  if(USE_DEPTH_FOR_DETECTION){
+    improveWithDepth (b_mask_combined, b_mask, depth_ptr->image);
+  }
+  else{
+    b_mask_combined=b_mask;
+  }
+
+  // Multiply the binary mask and the depth image to get approximate distance
+  b_mask_combined.convertTo(b_mask_float, CV_32FC1, 1/255.0);
+  dist=depth_ptr->image.mul(b_mask_float);
+
+  cv::findContours( b_mask_combined, contours, hierarchy,
+                    cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
+
+  /// Approximate contours to polygons + get bounding
+  std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
+  std::vector<cv::Rect> boundRect( contours.size() );
+  std::vector<cv::Rect> aerealBoundRect( contours.size() );
+  std::vector<float> objDist( contours.size(), 0.0 );
+  std::vector<geometry_msgs::Point> objPoseEst(contours.size());
+
+  int n_objects = 0;
+  bool obj_is_big_enough;
+
+  for( int i = 0; i < contours.size(); i++ ){   //Iterating through contours
+
+    //Defined precision polygon approximation
+    cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
+    boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
+    cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
+
+    obj_is_big_enough=true;
+
+    //Discard small objects
+    if (boundRect[i].height < MIN_OBJ_HEIGHT && boundRect[i].width < MIN_OBJ_WIDTH){
+      obj_is_big_enough = false;
+    }
+
+    //Get a small rectangle centered inside the boundRect to avoid distance errors
+    int dist_values;
+    int x_init=boundRect[i].tl().x+boundRect[i].width/4;
+    int y_init=boundRect[i].tl().y+boundRect[i].height/4;
+    int x_fin=boundRect[i].br().x-boundRect[i].width/4;
+    int y_fin=boundRect[i].br().y-boundRect[i].height/4;
+
+    if (obj_is_big_enough){
+
+      objDist[i]=getObjDistance(dist,x_init,x_fin,y_init,y_fin);
+      tf2::Vector3 ObjectPosition;
+      ObjectPosition=getObjEstPose(W_C_Transform,boundRect[i], objDist[i],x_init,y_init);
+      objPoseEst[n_objects].x=ObjectPosition.getX();
+      objPoseEst[n_objects].y=ObjectPosition.getY();
+      objPoseEst[n_objects].z=ObjectPosition.getZ();
+      n_objects ++;
+
+      //Drawing contours
+      cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
+      cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+    }
+ }// End of contours iteration
+
+  publishMarkers(n_objects, objPoseEst);
+
+  img_bridge = cv_bridge::CvImage(h, "8UC3" ,drw);
+  img_bridge.toImageMsg(image_out_msg);
+  image_pub_.publish(image_out_msg);
+  sync_pose_pub_.publish(p);
+}
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+void detection::poseCB(const geometry_msgs::PoseStampedConstPtr& msg){
+  last_vicon_pose = *msg;
+}
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+cv::Mat detection::imageProcessing(cv::Mat hsv_img){
+  cv::Mat b_mask, element;
   cv::inRange(hsv_img,
               cv::Scalar(H_LOWER_THRESHOLD, S_LOWER_THRESHOLD, V_LOWER_THRESHOLD),
               cv::Scalar(H_UPPER_THRESHOLD, S_UPPER_THRESHOLD, V_UPPER_THRESHOLD),
@@ -199,125 +244,11 @@ void detection::imageCb(const sensor_msgs::ImageConstPtr& msg,
   // Apply the erosion operation
   cv::erode( b_mask, b_mask, element );
   cv::dilate( b_mask, b_mask, element );
-
-  if(USE_DEPTH_FOR_DETECTION){
-    improveWithDepth (b_mask_combined, b_mask, depth_ptr->image);
-    ROS_INFO_STREAM("Using depth for improve detection");
-  }
-  else{
-    b_mask_combined=b_mask;
-  }
-
-  // Multiply the bin.at(ary mask and the depth image to get approximate distance
-  b_mask_combined.convertTo(b_mask_float, CV_32FC1, 1/255.0);
-  dist=depth_ptr->image.mul(b_mask_float);
-
-  ////////////////////////////////////////////////////////////////////////////
-  //                    GET CONTOURS AND BOUNDING BOX                       //
-  ////////////////////////////////////////////////////////////////////////////
-  cv::findContours( b_mask_combined, contours, hierarchy,
-                    cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE );
-
-  /// Approximate contours to polygons + get bounding
-  std::vector<std::vector<cv::Point> > contours_poly( contours.size() );
-  std::vector<cv::Rect> boundRect( contours.size() );
-  std::vector<cv::Rect> aerealBoundRect( contours.size() );
-  std::vector<float> objDist( contours.size(), 0.0 );
-  std::vector<geometry_msgs::Point> objPoseEst(contours.size());
-
-  int n_objects = 0;
-
-  for( int i = 0; i < contours.size(); i++ ){
-
-    //Defined precision polygon approximation
-    cv::approxPolyDP( cv::Mat(contours[i]), contours_poly[i], 3, true );
-    boundRect[i] = cv::boundingRect( cv::Mat(contours_poly[i]) );
-    cv::Scalar color( i*25, (contours.size()-i)*25, i*25 );
-
-    //                 GET ESTIMATE DISTANCE TO OBJECTS                     //
-    bool obj_is_big_enough=true;
-
-    //Discard small objects
-    if (boundRect[i].height < MIN_OBJ_HEIGHT && boundRect[i].width < MIN_OBJ_WIDTH){
-      obj_is_big_enough = false;
-    }
-
-    //Get a small rectangle centered inside the boundRect to avoid dista,nce errors
-    int dist_values;
-    int x_init=boundRect[i].tl().x+boundRect[i].width/4;
-    int y_init=boundRect[i].tl().y+boundRect[i].height/4;
-    int x_fin=boundRect[i].br().x-boundRect[i].width/4;
-    int y_fin=boundRect[i].br().y-boundRect[i].height/4;
-
-    if (obj_is_big_enough){
-
-      objDist[i]=getObjDistance(dist,x_init,x_fin,y_init,y_fin);
-
-      //                         GET OBJECT POSE                              //
-      tf2::Vector3 ObjectPosition;
-      ObjectPosition=getObjEstPose(W_C_Transform,boundRect[i], objDist[i],x_init,y_init);
-      objPoseEst[n_objects].x=ObjectPosition.getX();
-      objPoseEst[n_objects].y=ObjectPosition.getY();
-      objPoseEst[n_objects].z=ObjectPosition.getZ();
-      n_objects ++;
-
-      //Drawing contours
-      cv::drawContours( drw, contours_poly, i, color, 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point() );
-      cv::rectangle( drw, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
-    }
- }
- publishMarkers(n_objects, objPoseEst);
-
- /////////////////////////////////////////////////////////////////////////////
- //               TRANSFORM IMAGE TO MSG AND PUBLISH IT                     //
- /////////////////////////////////////////////////////////////////////////////
-  img_bridge = cv_bridge::CvImage(h, "8UC3" ,drw);
-  img_bridge.toImageMsg(img_msg);
-    // Output modified video stream
-  image_pub_.publish(img_msg);
-  sync_pose_pub_.publish(p);
+  return b_mask;
 }
 
-
-void detection::poseCB(const geometry_msgs::PoseStampedConstPtr& msg){
-  last_vicon_pose = *msg;
-}
-
-tf2::Vector3 detection::getObjEstPose(tf2::Transform W_C_Transform, cv::Rect boundRect,float objDist,int x_init,int y_init) {
-
-  //Calculate camera_relative angle of the object i
-  double rot_z=(x_init+(boundRect.width/2.0)-H_CENTER)*HAP;
-  double rot_y=(y_init+(boundRect.height/2.0)-V_CENTER)*VAP;
-  tf2::Vector3 ObjectTranslation(objDist,0,0);
-  tf2::Quaternion ObjectRotation;
-  ObjectRotation.setRPY((double) 0,rot_y,rot_z);
-  tf2::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
-  C_I_Transform.mult(W_C_Transform,C_I_Transform);
-  return ObjectTranslation=C_I_Transform.getOrigin();
-}
-
-float detection::getObjDistance(cv::Mat depth_img, int x_init, int x_fin, int y_init, int y_fin){
-
-  float actual_float=0.0;
-  float object_distance = 0.0;
-  int dist_values=0;
-
-  for( int i = x_init; i < x_fin; i++ ){
-    for( int j = y_init; j < y_fin; j++ ){
-
-      //Get the distance value
-      actual_float = depth_img.at<float>(j, i);
-
-      //Chech for valid distance value
-      if ( actual_float > 0.0 && actual_float < 100.0){
-        object_distance = object_distance + actual_float;
-        dist_values ++;
-      }
-    }
-  }
-  // Get the average distance of the object i
-  return (object_distance/dist_values);
-}
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
 
 void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv::Mat &depth ){
 
@@ -390,6 +321,80 @@ void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv:
   }
 }
 
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+float detection::getObjDistance(cv::Mat depth_img, int x_init, int x_fin, int y_init, int y_fin){
+
+  float actual_float=0.0;
+  float object_distance = 0.0;
+  int dist_values=0;
+
+  for( int i = x_init; i < x_fin; i++ ){
+    for( int j = y_init; j < y_fin; j++ ){
+
+      //Get the distance value
+      actual_float = depth_img.at<float>(j, i);
+
+      //Chech for valid distance value
+      if ( actual_float > 0.0 && actual_float < 100.0){
+        object_distance = object_distance + actual_float;
+        dist_values ++;
+      }
+    }
+  }
+  // Get the average distance of the object i
+  return (object_distance/dist_values);
+}
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+tf2::Vector3 detection::getObjEstPose(tf2::Transform W_C_Transform, cv::Rect boundRect,float objDist,int x_init,int y_init) {
+
+  //Calculate camera_relative angle of the object i
+  double rot_z=(x_init+(boundRect.width/2.0)-H_CENTER)*HAP;
+  double rot_y=(y_init+(boundRect.height/2.0)-V_CENTER)*VAP;
+  tf2::Vector3 ObjectTranslation(objDist,0,0);
+  tf2::Quaternion ObjectRotation;
+  ObjectRotation.setRPY((double) 0,rot_y,rot_z);
+  tf2::Transform C_I_Transform(ObjectRotation,ObjectTranslation);
+  C_I_Transform.mult(W_C_Transform,C_I_Transform);
+  return ObjectTranslation=C_I_Transform.getOrigin();
+}
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
+
+void detection::publishMarkers(int n_markers, std::vector<geometry_msgs::Point> objects_poses){
+
+  visualization_msgs::MarkerArray markersArray;
+
+  for (int i = 0; i < n_markers; i++){
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "vicon";
+    marker.header.stamp = ros::Time();
+    marker.ns = "detct";
+    marker.id = lastest_marker_id;
+    marker.type = visualization_msgs::Marker::SPHERE;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.pose.position.x = objects_poses[i].x;
+    marker.pose.position.y = objects_poses[i].y;
+    marker.pose.position.z = objects_poses[i].z;
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    marker.color.a = 1.0; // Don't forget to set the alpha!
+    marker.color.g = 1.0;
+    lastest_marker_id ++;
+    markersArray.markers.push_back(marker);
+  }
+  markers_pub_.publish( markersArray );
+
+}
+
+//----------------------------------------------------------------------------//
+//----------------------------------------------------------------------------//
 
 int main(int argc, char** argv)
 {
