@@ -1,6 +1,0 @@
-RGB   -> min: 2684627.081s
-DEPTH -> min: 2684626.896s 
-
-POSE  -> min: 2666648.277s
-
-DIFF_POS-RGB ->17978.023674s

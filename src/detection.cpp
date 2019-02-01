@@ -313,7 +313,7 @@ void detection::improveWithDepth (cv::Mat &b_mask_combined, cv::Mat &b_mask, cv:
     }
 
     b_mask_aux = b_mask_aux.mul(mask);
-    
+
     element = cv::getStructuringElement( cv::MORPH_ELLIPSE,
                                          cv::Size( 2*EROSION_SIZE + 1, 2*EROSION_SIZE+1 ),
                                          cv::Point( EROSION_SIZE, EROSION_SIZE ) );
@@ -389,9 +389,9 @@ void detection::publishMarkers(int n_markers, std::vector<geometry_msgs::Point> 
     marker.pose.position.x = objects_poses[i].x;
     marker.pose.position.y = objects_poses[i].y;
     marker.pose.position.z = objects_poses[i].z;
-    marker.scale.x = 0.1;
-    marker.scale.y = 0.1;
-    marker.scale.z = 0.1;
+    marker.scale.x = 0.05;
+    marker.scale.y = 0.05;
+    marker.scale.z = 0.05;
     marker.color.a = 1.0; // Don't forget to set the alpha!
     marker.color.g = 1.0;
     lastest_marker_id ++;

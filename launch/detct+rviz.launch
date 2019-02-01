@@ -15,16 +15,15 @@
     <param name="config/depth_topic"  type="str"  value="/camera/depth/image"/>
     <param name="config/pose_topic"   type="str"  value="/vicon_client/AsusXtionPro/pose"/>
 
-    <param name="image_proc_params/h_low"    type="int"  value="7"/>
-    <param name="image_proc_params/h_high"   type="int"  value="45"/>
-    <param name="image_proc_params/s_low"    type="int"  value="110"/>
+    <param name="image_proc_params/h_low"    type="int"  value="17"/>
+    <param name="image_proc_params/h_high"   type="int"  value="58"/>
+    <param name="image_proc_params/s_low"    type="int"  value="59"/>
     <param name="image_proc_params/s_high"   type="int"  value="255"/>
-    <param name="image_proc_params/v_low"    type="int"  value="64"/>
+    <param name="image_proc_params/v_low"    type="int"  value="72"/>
     <param name="image_proc_params/v_high"   type="int"  value="255"/>
 
     <param name="image_proc_params/morph_op_erosion_size"   type="int"  value="6"/>
-    <param name="image_proc_params/morph_op_dilation_size"   type="int"  value="10"/>
-
+    <param name="image_proc_params/morph_op_dilation_size"   type="int"  value="6"/>
 
     <param name="image_proc_params/min_obj_height"   type="int"  value="20"/>
     <param name="image_proc_params/min_obj_width"    type="int"  value="20"/>
@@ -32,9 +31,9 @@
     <param name="image_proc_params/depth_segmentation_tolerance"   type="double"  value="0.1"/>
     <param name="image_proc_params/depth_bound_expansion_coef"   type="int"  value="10"/>
 
-    <param name="image_proc_params/use_depth_for_detection"   type="bool"  value="true"/>
+    <param name="image_proc_params/use_depth_for_detection"   type="bool"  value="false"/>
 
-    <param name="time/pose2camera_delay"   type="double"  value="18000.023674"/>
+    
 
   </node>
 
