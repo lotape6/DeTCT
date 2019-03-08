@@ -33,6 +33,7 @@ int main(int argc, char** argv){
   return 0;
 }
 
+
 void callback (const visualization_msgs::MarkerArrayConstPtr& MarkerArray){
   visualization_msgs::Marker marker;
   marker.header.frame_id = "vicon";

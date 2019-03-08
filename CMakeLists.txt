@@ -144,6 +144,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
  add_executable(detection src/detection.cpp)
  add_executable(balloons_viz src/balloons_viz.cpp)
+ add_executable(spawn_arena src/spawn_arena.cpp)
 
 
 
@@ -167,6 +168,10 @@ include_directories(
  target_link_libraries(balloons_viz
    ${catkin_LIBRARIES}
  )
+ target_link_libraries(spawn_arena
+   ${catkin_LIBRARIES}
+ )
+
 #############
 ## Install ##
 #############
