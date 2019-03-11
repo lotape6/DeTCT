@@ -124,8 +124,8 @@
           </mesh>
         </geometry>
         <material>
-          <ambient>0 0 0 1</ambient>
-          <diffuse>%R %G %B 1</diffuse>
+          <ambient>%Ra %Ga %Ba 1</ambient>
+          <diffuse>%Rd %Gd %Bd 1</diffuse>
           <specular>1 1 1 1</specular>
           <shader type='pixel'>
             <normal_map>__default__</normal_map>

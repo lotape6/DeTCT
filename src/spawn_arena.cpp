@@ -8,7 +8,8 @@
 #include <string>
 #include <urdf/model.h>
 
-
+/*-------------------------------------------*/
+/*            AUXILIAR FUNCTIONS             */
 /*-------------------------------------------*/
 std::string intToString (int a) {
     std::stringstream ss;
@@ -22,6 +23,32 @@ bool replace(std::string& str, const std::string& from, const std::string& to) {
         return false;
     str.replace(start_pos, from.length(), to);
     return true;
+}
+/*-------------------------------------------*/
+std::string replaceXML(std::string actual_xmlStr){
+  std::string randStr;
+  float randNum;
+
+  randNum = (float)rand()/(float)(RAND_MAX)*100.0;
+  randStr = "0."+intToString(randNum);
+  replace(actual_xmlStr,"%Ra",randStr);
+  randStr = "0."+intToString(randNum+0.2);
+  replace(actual_xmlStr,"%Rd",randStr);
+
+  randNum = (float)rand()/(float)(RAND_MAX)*100.0;
+  randStr = "0."+intToString(randNum);
+  replace(actual_xmlStr,"%Ga",randStr);
+  randStr = "0."+intToString(randNum+0.2);
+  replace(actual_xmlStr,"%Gd",randStr);
+
+  randNum = (float)rand()/(float)(RAND_MAX)*100.0;
+  randStr = "0."+intToString(randNum);
+  replace(actual_xmlStr,"%Ba",randStr);
+  randStr = "0."+intToString(randNum+0.2);
+  replace(actual_xmlStr,"%Bd",randStr);
+
+
+  return actual_xmlStr;
 }
 /*-------------------------------------------*/
 
@@ -62,7 +89,7 @@ int main(int argc, char **argv)
 
   std::ifstream balloon_inXml;
   std::stringstream balloon_strStream;
-  std::string balloon_xmlStr;
+  std::string balloon_xmlStr ;
   std::string PATH = "/home/fidel/catkin_ws/src/DeTCT/urdf/fixed_balloon_shiny.sdf";
   balloon_inXml.open(PATH.c_str());
   balloon_strStream << balloon_inXml.rdbuf();
@@ -74,17 +101,10 @@ int main(int argc, char **argv)
   {
     std::string index = intToString(count);
     std::string model_name;
-    std::string randStr;
+    std::string randStr, actual_xmlStr;
 
-    randStr = "0."+intToString((float)rand()/(float)(RAND_MAX)*100.0);
-    ROS_INFO_STREAM(randStr);
-    replace(balloon_xmlStr,"%R",randStr);
-    randStr = "0."+intToString((float)rand()/(float)(RAND_MAX)*100.0);
-    ROS_INFO_STREAM(randStr);
-    replace(balloon_xmlStr,"%G",randStr);
-    randStr = "0."+intToString((float)rand()/(float)(RAND_MAX)*100.0);
-    ROS_INFO_STREAM(randStr);
-    replace(balloon_xmlStr,"%B",randStr);
+    actual_xmlStr = balloon_xmlStr;
+    actual_xmlStr = replaceXML(actual_xmlStr);
 
     spawn_model_req.initial_pose.position.x = (float)rand()/(float)(RAND_MAX) * 100-50;
     spawn_model_req.initial_pose.position.y = (float)rand()/(float)(RAND_MAX) * 60-30;
@@ -94,7 +114,7 @@ int main(int argc, char **argv)
     model_name = "Balloon_" + index;  // initialize model_name
     spawn_model_req.model_name = model_name;
     spawn_model_req.robot_namespace = model_name;
-    spawn_model_req.model_xml = balloon_xmlStr;
+    spawn_model_req.model_xml = actual_xmlStr;
     // spawn_model_req.reference_frame = "map";
 
     bool call_service = spawnClient.call(spawn_model_req, spawn_model_resp);
