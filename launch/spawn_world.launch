@@ -1,0 +1,13 @@
+<launch>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find detct)/worlds/world2.sdf"/>
+    <!-- more default parameters can be changed here -->
+  </include>
+
+  <node name="spawn_arena" type="spawn_arena" pkg="detct" output="screen">
+    <param name="n_balloons"    type="int"     value="30"/>
+    <param name="model_path"    type="str"     value="/home/fidel/catkin_ws/src/DeTCT/urdf/fixed_balloon_shiny.sdf"/>
+  </node>
+
+</launch>

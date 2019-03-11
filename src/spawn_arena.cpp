@@ -66,8 +66,8 @@ int main(int argc, char **argv)
   int N_BALLOONS;
   std::string MODEL_PATH;
 
-  if(nh.param<int>("/detection/spawn_params/n_balloons", N_BALLOONS, 15) &&
-     nh.param<std::string>("/detection/spawn_params/model_path", MODEL_PATH,
+  if(nh.param<int>("/spawn_arena/n_balloons", N_BALLOONS, 15) &&
+     nh.param<std::string>("/spawn_arena/model_path", MODEL_PATH,
                            "/home/fidel/catkin_ws/src/DeTCT/urdf/fixed_balloon_shiny.sdf")){
     ROS_INFO("Parameters received");
   }
@@ -89,9 +89,8 @@ int main(int argc, char **argv)
 
   std::ifstream balloon_inXml;
   std::stringstream balloon_strStream;
-  std::string balloon_xmlStr ;
-  std::string PATH = "/home/fidel/catkin_ws/src/DeTCT/urdf/fixed_balloon_shiny.sdf";
-  balloon_inXml.open(PATH.c_str());
+  std::string balloon_xmlStr;
+  balloon_inXml.open(MODEL_PATH.c_str());
   balloon_strStream << balloon_inXml.rdbuf();
   balloon_xmlStr = balloon_strStream.str();
 
