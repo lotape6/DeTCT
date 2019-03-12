@@ -15,54 +15,54 @@
       <direction>-0.5 0.5 -1</direction>
     </light>
 
-    <model name='ground_plane'>
-      <static>1</static>
-      <link name='link'>
-        <collision name='collision'>
+    <model name="heightmap">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
           <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>100 60</size>
-            </plane>
+            <heightmap>
+              <uri>/home/fidel/Pictures/dem/num_200_120.tif</uri>
+              <size>200 120 1.5</size>
+              <pos>0 -30 -1</pos>
+            </heightmap>
           </geometry>
-          <surface>
-            <friction>
-              <ode>
-                <mu>100</mu>
-                <mu2>50</mu2>
-              </ode>
-              <torsional>
-                <ode/>
-              </torsional>
-            </friction>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-          </surface>
-          <max_contacts>10</max_contacts>
         </collision>
-        <visual name='visual'>
-          <cast_shadows>0</cast_shadows>
+
+        <visual name="visual_abcedf">
           <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>100 100</size>
-            </plane>
+            <heightmap>
+              <texture>
+                <diffuse>file://media/materials/textures/dirt_diffusespecular.png</diffuse>
+                <normal>file://media/materials/textures/flat_normal.png</normal>
+                <size>60</size>
+              </texture>
+              <!-- <texture>
+                <diffuse>file://media/materials/textures/grass_diffusespecular.png</diffuse>
+                <normal>file://media/materials/textures/flat_normal.png</normal>
+                <size>1</size>
+              </texture> -->
+              <texture>
+                <diffuse>file://media/materials/textures/fungus_diffusespecular.png</diffuse>
+                <normal>file://media/materials/textures/flat_normal.png</normal>
+                <size>7</size>
+              </texture>
+              <!-- <blend>
+                <min_height>2</min_height>
+                <fade_dist>5</fade_dist>
+              </blend> -->
+              <blend>
+                <min_height>4</min_height>
+                <fade_dist>5</fade_dist>
+              </blend>
+              <uri>/home/fidel/Pictures/dem/num_200_120.tif</uri>
+              <size>200 120 1.5</size>
+              <pos>0 -30 -1</pos>
+            </heightmap>
           </geometry>
-          <material>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/WoodFloor</name>
-            </script>
-          </material>
         </visual>
-        <self_collide>0</self_collide>
-        <kinematic>0</kinematic>
-        <gravity>1</gravity>
+
       </link>
     </model>
-
 
 
 
@@ -80,9 +80,9 @@
 
     <scene>
       <sky>
-	<clouds>
-	  <speed>12</speed>
-	</clouds>
+        <clouds>
+          <speed>12</speed>
+        </clouds>
       </sky>
       <!--ambient>0.4 0.4 0.4 1</ambient-->
       <!--background>0.7 0.7 0.7 1</background-->
@@ -102,21 +102,10 @@
       <real_time>14 844417413</real_time>
       <wall_time>1551774923 915875277</wall_time>
       <iterations>14807</iterations>
-      <model name='heightmap'>
+      <!-- <model name='heightmap'>
         <pose frame=''>0 0 0 0 -0 0</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose frame=''>0 0 0 0 -0 0</pose>
-          <velocity>0 0 0 0 -0 0</velocity>
-          <acceleration>0 0 0 0 -0 0</acceleration>
-          <wrench>0 0 0 0 -0 0</wrench>
-        </link>
-      </model>
-
-      <!-- <model name='fixed_helium_balloon'>
-        <pose frame=''>0 0 0 0 -0 0</pose>
-        <scale>1 1 1</scale>
-        <link name='ground_link'>
           <pose frame=''>0 0 0 0 -0 0</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
